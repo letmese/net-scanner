@@ -58,9 +58,6 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends jq ripgrep python3 python3-pip
 
-      - name: Setup Gradle cache
-        uses: gradle/actions/setup-gradle@v4
-
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
@@ -124,9 +121,6 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends jq ripgrep python3 python3-pip
-
-      - name: Setup Gradle cache
-        uses: gradle/actions/setup-gradle@v4
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
