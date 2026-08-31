@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/bg_root">
+
+    <!-- Header -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="20dp"
+        android:layout_marginTop="80dp"
+        android:paddingTop="48dp"
+        android:paddingBottom="14dp">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="NetScanner"
+                android:textSize="24sp"
+                android:textColor="#EDEDF2"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tv_net"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="12sp"
+                android:textColor="#8A8A99"
+                android:layout_marginTop="3dp" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/btn_scan"
+            android:layout_width="wrap_content"
+            android:layout_height="44dp"
+            android:gravity="center"
+            android:text="Scan Network"
+            android:textSize="13sp"
+            android:textColor="#0E0E16"
+            android:textStyle="bold"
+            android:background="@drawable/btn_primary"
+            android:paddingHorizontal="20dp"
+            android:clickable="true"
+            android:focusable="true" />
+    </LinearLayout>
+
+    <EditText
+        android:id="@+id/et_subnet"
+        android:layout_width="match_parent"
+        android:layout_height="40dp"
+        android:layout_marginHorizontal="20dp"
+        android:textSize="13sp"
+        android:textColor="#EDEDF2"
+        android:textColorHint="#5E5E70"
+        android:inputType="text"
+        android:maxLines="1"
+        android:background="@drawable/input_bg"
+        android:paddingHorizontal="12dp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingHorizontal="20dp"
+        android:layout_marginTop="90dp"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:id="@+id/btn_localports"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="34dp"
+            android:gravity="center"
+            android:text="🔌 My Ports"
+            android:textSize="11sp"
+            android:textColor="#EDEDF2"
+            android:background="@drawable/btn_secondary"
+            android:layout_marginEnd="8dp"
+            android:clickable="true"
+            android:focusable="true" />
+
+        <TextView
+            android:id="@+id/btn_history"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="34dp"
+            android:gravity="center"
+            android:text="🕘 History"
+            android:textSize="11sp"
+            android:textColor="#EDEDF2"
+            android:background="@drawable/btn_secondary"
+            android:layout_marginEnd="8dp"
+            android:clickable="true"
+            android:focusable="true" />
+
+        <TextView
+            android:id="@+id/btn_tools"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="34dp"
+            android:gravity="center"
+            android:text="🧰 Tools"
+            android:textSize="11sp"
+            android:textColor="#EDEDF2"
+            android:background="@drawable/btn_secondary"
+            android:layout_marginEnd="8dp"
+            android:clickable="true"
+            android:focusable="true" />
+
+        <TextView
+            android:id="@+id/btn_watch"
+            android:layout_width="0dp"
+            android:layout_weight="1.3"
+            android:layout_height="34dp"
+            android:gravity="center"
+            android:text="👀 Watch OFF"
+            android:textSize="11sp"
+            android:textColor="#8A8A99"
+            android:background="@drawable/btn_secondary"
+            android:clickable="true"
+            android:focusable="true" />
+    </LinearLayout>
+
+
+    <TextView
+        android:id="@+id/tv_status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textSize="12sp"
+        android:textColor="#8A8A99"
+        android:paddingHorizontal="20dp"
+        android:visibility="gone" />
+
+    <ProgressBar
+        android:id="@+id/progress"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="20dp"
+        android:layout_marginTop="6dp"
+        android:visibility="gone" />
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/list"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clipToPadding="false"
+        android:padding="14dp"
+        android:overScrollMode="never" />
+</LinearLayout>

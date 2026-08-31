@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Soft elevation shadow (stacked translucent layers for a blurred falloff look) -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:top="6dp" android:left="4dp" android:right="4dp" android:bottom="-3dp">
+        <shape>
+            <corners android:radius="20dp" />
+            <solid android:color="#14000000" />
+        </shape>
+    </item>
+    <item android:top="3dp" android:left="2dp" android:right="2dp" android:bottom="-1dp">
+        <shape>
+            <corners android:radius="20dp" />
+            <solid android:color="#26000000" />
+        </shape>
+    </item>
+</layer-list>

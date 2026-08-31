@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- deep glass navy with richer multi-stop gradient -->
+    <item>
+        <shape>
+            <gradient android:angle="315"
+                android:startColor="#1D2A4A"
+                android:centerColor="#111B33"
+                android:endColor="#080A16" />
+        </shape>
+    </item>
+    <!-- cyan glass halo -->
+    <item>
+        <shape android:shape="oval">
+            <gradient android:angle="270"
+                android:startColor="#334CC2FF"
+                android:endColor="#004CC2FF" />
+        </shape>
+    </item>
+    <!-- subtle top shine -->
+    <item>
+        <shape>
+            <gradient android:angle="270"
+                android:startColor="#2EFFFFFF"
+                android:endColor="#00FFFFFF" />
+        </shape>
+    </item>
+</layer-list>

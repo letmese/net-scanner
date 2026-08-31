@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Frosted glass sheet (list rows / panels): soft shadow, translucent body, top shine -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- soft under-shadow -->
+    <item android:top="3dp" android:left="1dp" android:right="1dp" android:bottom="-1dp">
+        <shape>
+            <corners android:radius="18dp" />
+            <solid android:color="#33000000" />
+        </shape>
+    </item>
+    <!-- frosted translucent surface -->
+    <item>
+        <shape>
+            <gradient android:angle="270"
+                android:startColor="#F01D2A40"
+                android:centerColor="#E6151F31"
+                android:endColor="#D40E1728" />
+            <corners android:radius="18dp" />
+            <stroke android:width="1dp" android:color="#4D9FB6D0" />
+        </shape>
+    </item>
+    <!-- top edge shine -->
+    <item android:top="1dp" android:left="1dp" android:right="1dp" android:bottom="22dp">
+        <shape>
+            <gradient android:angle="270"
+                android:startColor="#2EFFFFFF"
+                android:endColor="#00FFFFFF" />
+            <corners android:radius="17dp" />
+        </shape>
+    </item>
+</layer-list>

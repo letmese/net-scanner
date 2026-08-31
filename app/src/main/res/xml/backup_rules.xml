@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<full-backup-content>
-    <!-- Net Scanner doesn't store any sensitive data; allow full backup -->
-    <include domain="sharedpref" path="." />
-</full-backup-content>

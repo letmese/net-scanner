@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Glowing glass accent button: cyan tint gradient, luminous hairline, rounded -->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="#40FFFFFF">
+    <item>
+        <shape>
+            <gradient android:angle="270"
+                android:startColor="#594CC2FF"
+                android:centerColor="#334CC2FF"
+                android:endColor="#224CC2FF" />
+            <stroke android:width="1dp" android:color="#8C9CD9FF" />
+            <corners android:radius="18dp" />
+        </shape>
+    </item>
+</ripple>

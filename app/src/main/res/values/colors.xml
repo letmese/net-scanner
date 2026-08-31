@@ -1,43 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="primary">#6750A4</color>
-    <color name="onPrimary">#FFFFFF</color>
-    <color name="primaryContainer">#EADDFF</color>
-    <color name="onPrimaryContainer">#21005D</color>
-    <color name="secondary">#625B71</color>
-    <color name="onSecondary">#FFFFFF</color>
-    <color name="secondaryContainer">#E8DEF8</color>
-    <color name="onSecondaryContainer">#1D192B</color>
-    <color name="tertiary">#7D5260</color>
-    <color name="onTertiary">#FFFFFF</color>
-    <color name="tertiaryContainer">#FFD8E4</color>
-    <color name="onTertiaryContainer">#31111D</color>
-    <color name="error">#B3261E</color>
-    <color name="onError">#FFFFFF</color>
-    <color name="errorContainer">#F9DEDC</color>
-    <color name="onErrorContainer">#410E0B</color>
-    <color name="background">#FFFBFE</color>
-    <color name="onBackground">#1C1B1F</color>
-    <color name="surface">#FFFBFE</color>
-    <color name="onSurface">#1C1B1F</color>
-    <color name="surfaceVariant">#E7E0EC</color>
-    <color name="onSurfaceVariant">#49454F</color>
-    <color name="outline">#79747E</color>
-    <color name="outlineVariant">#CAC4D0</color>
-    <color name="shadow">#000000</color>
-    <color name="scrim">#000000</color>
-    <color name="inverseSurface">#313033</color>
-    <color name="inverseOnSurface">#F4EFF4</color>
-    <color name="inversePrimary">#D0BCFF</color>
-    
-    <!-- Glassy colors -->
-    <color name="glass_background">#80FFFFFF</color>
-    <color name="glass_border">#33FFFFFF</color>
-    <color name="glass_highlight">#4DFFFFFF</color>
-    <color name="glass_shadow">#1A000000</color>
-    
-    <!-- Status colors -->
-    <color name="online">#4CAF50</color>
-    <color name="offline">#9E9E9E</color>
-    <color name="warning">#FF9800</color>
-    <color name="ic_launcher_background">#6750A4</color>
+    <!-- legacy -->
+    <color name="ic_launcher_bg">#0E0E16</color>
+
+    <!-- ===== Glass canvas (background) ===== -->
+    <color name="glass_base_deep">#060910</color>
+    <color name="glass_base_mid">#0C1220</color>
+    <color name="glass_base_top">#141C2E</color>
+
+    <!-- ===== Frosted surface tones ===== -->
+    <color name="glass_surface">#E8182132</color>
+    <color name="glass_surface_strong">#F21F2B40</color>
+    <color name="glass_surface_soft">#D40E1728</color>
+    <color name="glass_surface_sheet">#E6151F31</color>
+
+    <!-- ===== Glass tints (white alpha layers) ===== -->
+    <color name="glass_tint_high">#38FFFFFF</color>
+    <color name="glass_tint_mid">#1EFFFFFF</color>
+    <color name="glass_tint_low">#0AFFFFFF</color>
+    <color name="glass_tint_faint">#08FFFFFF</color>
+
+    <!-- ===== Hairline borders ===== -->
+    <color name="hairline_glass">#4D9FB6D0</color>
+    <color name="hairline_bright">#5C9FB6D0</color>
+    <color name="hairline_white">#33FFFFFF</color>
+
+    <!-- ===== Accent glows ===== -->
+    <color name="accent_glow">#FF4CC2FF</color>
+    <color name="accent_glow_soft">#334CC2FF</color>
+    <color name="accent_cyan">#38BDF8</color>
+    <color name="accent_violet">#8181F2</color>
+
+    <!-- ===== Semantic accents ===== -->
+    <color name="good_glow">#34D399</color>
+    <color name="warn_glow">#FBBF24</color>
+    <color name="bad_glow">#FB7185</color>
 </resources>
