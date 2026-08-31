@@ -43,6 +43,12 @@
         <item name="cardCornerRadius">20dp</item>
         <item name="cardElevation">0dp</item>
     </style>
+
+    <!-- Circle shape appearance (used for round device icons in item_device.xml) -->
+    <style name="ShapeAppearanceOverlay.Circle" parent="">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">50%</item>
+    </style>
     
     <!-- Glassy button style -->
     <style name="Widget.NetScanner.GlassButton" parent="Widget.Material3.Button.ElevatedButton">
