@@ -17,7 +17,7 @@
         <item name="colorOnError">@color/onError</item>
         <item name="colorErrorContainer">@color/errorContainer</item>
         <item name="colorOnErrorContainer">@color/onErrorContainer</item>
-        <item name="colorBackground">@color/background</item>
+        <item name="android:colorBackground">@color/background</item>
         <item name="colorOnBackground">@color/onBackground</item>
         <item name="colorSurface">@color/surface</item>
         <item name="colorOnSurface">@color/onSurface</item>
