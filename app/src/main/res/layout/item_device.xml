@@ -167,7 +167,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="2dp"
-                    android:text="@{device.openPorts}"
+                    android:text="@{device.openPortsString}"
                     android:textAppearance="?attr/textAppearanceBodyMedium"
                     android:textColor="@color/primary" />
             </LinearLayout>
