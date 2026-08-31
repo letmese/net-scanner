@@ -67,9 +67,10 @@ class MainActivity : AppCompatActivity() {
         binding.fabScan.setOnClickListener { startScan() }
 
         // Bottom sheet — its root view in activity_main.xml is included from
-        // bottom_sheet_network_info.xml, with id bottomSheetNetworkInfo.
-        bottomSheetBehavior = BottomSheetBehavior.from(binding.bottomSheetNetworkInfo)
-        binding.bottomSheetNetworkInfo.findViewById<View>(R.id.btnCloseBottomSheet)?.setOnClickListener {
+        // bottom_sheet_network_info.xml. The generated binding exposes the
+        // included binding object; we need its .root for BottomSheetBehavior.
+        bottomSheetBehavior = BottomSheetBehavior.from(binding.bottomSheetNetworkInfo.root)
+        binding.bottomSheetNetworkInfo.btnCloseBottomSheet.setOnClickListener {
             bottomSheetBehavior?.state = BottomSheetBehavior.STATE_HIDDEN
         }
     }
@@ -145,16 +146,17 @@ class MainActivity : AppCompatActivity() {
 
     private fun showNetworkInfo() {
         val info = networkScanner.getNetworkInfo()
-        val sheet = binding.bottomSheetNetworkInfo
-        sheet.findViewById<android.widget.TextView>(R.id.tvSsid).text = info.ssid
-        sheet.findViewById<android.widget.TextView>(R.id.tvBssid).text = info.bssid
-        sheet.findViewById<android.widget.TextView>(R.id.tvLocalIp).text = info.localIp
-        sheet.findViewById<android.widget.TextView>(R.id.tvGateway).text = info.gateway
-        sheet.findViewById<android.widget.TextView>(R.id.tvSubnet).text = info.subnetMask
-        sheet.findViewById<android.widget.TextView>(R.id.tvDns).text = info.dns
-        sheet.findViewById<android.widget.TextView>(R.id.tvSignal).text = "${info.signalStrength} dBm"
-        sheet.findViewById<android.widget.TextView>(R.id.tvFrequency).text = "${info.frequency} MHz"
-        sheet.findViewById<android.widget.TextView>(R.id.tvLinkSpeed).text = info.linkSpeed
+        with(binding.bottomSheetNetworkInfo) {
+            tvSsid.text = info.ssid
+            tvBssid.text = info.bssid
+            tvLocalIp.text = info.localIp
+            tvGateway.text = info.gateway
+            tvSubnet.text = info.subnetMask
+            tvDns.text = info.dns
+            tvSignal.text = "${info.signalStrength} dBm"
+            tvFrequency.text = "${info.frequency} MHz"
+            tvLinkSpeed.text = info.linkSpeed
+        }
 
         bottomSheetBehavior?.state = BottomSheetBehavior.STATE_EXPANDED
     }
