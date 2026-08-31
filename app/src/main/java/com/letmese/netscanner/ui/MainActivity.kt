@@ -2,6 +2,7 @@ package com.letmese.netscanner.ui
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.view.MenuItem
 import android.view.View
@@ -12,16 +13,15 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.google.android.material.bottomsheet.BottomSheetBehavior
+import com.letmese.netscanner.R
 import com.letmese.netscanner.data.NetworkDevice
 import com.letmese.netscanner.data.NetworkScanner
 import com.letmese.netscanner.databinding.ActivityMainBinding
-import com.letmese.netscanner.databinding.BottomSheetNetworkInfoBinding
 import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
-    private lateinit var bottomSheetBinding: BottomSheetNetworkInfoBinding
     private lateinit var networkScanner: NetworkScanner
     private lateinit var deviceAdapter: DeviceAdapter
     private var bottomSheetBehavior: BottomSheetBehavior<View>? = null
@@ -38,7 +38,6 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
-        bottomSheetBinding = BottomSheetNetworkInfoBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
         networkScanner = NetworkScanner(this)
@@ -51,8 +50,7 @@ class MainActivity : AppCompatActivity() {
 
         // RecyclerView
         deviceAdapter = DeviceAdapter { device ->
-            device.isExpanded = !device.isExpanded
-            deviceAdapter.notifyItemChanged(deviceAdapter.devices.indexOf(device))
+            // toggle already handled in adapter; here we could open detail sheet
         }
         binding.recyclerView.layoutManager = LinearLayoutManager(this)
         binding.recyclerView.adapter = deviceAdapter
@@ -60,17 +58,18 @@ class MainActivity : AppCompatActivity() {
         // Swipe refresh
         binding.swipeRefresh.setOnRefreshListener { startScan() }
         binding.swipeRefresh.setColorSchemeResources(
-            com.letmese.netscanner.R.color.primary,
-            com.letmese.netscanner.R.color.secondary,
-            com.letmese.netscanner.R.color.tertiary
+            R.color.primary,
+            R.color.secondary,
+            R.color.tertiary
         )
 
         // FAB
         binding.fabScan.setOnClickListener { startScan() }
 
-        // Bottom sheet
+        // Bottom sheet — its root view in activity_main.xml is included from
+        // bottom_sheet_network_info.xml, with id bottomSheetNetworkInfo.
         bottomSheetBehavior = BottomSheetBehavior.from(binding.bottomSheetNetworkInfo)
-        bottomSheetBinding.btnCloseBottomSheet.setOnClickListener {
+        binding.bottomSheetNetworkInfo.findViewById<View>(R.id.btnCloseBottomSheet)?.setOnClickListener {
             bottomSheetBehavior?.state = BottomSheetBehavior.STATE_HIDDEN
         }
     }
@@ -90,7 +89,9 @@ class MainActivity : AppCompatActivity() {
             requiredPermissions.add(Manifest.permission.ACCESS_FINE_LOCATION)
         }
 
-        val ungranted = requiredPermissions.filter { ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED }
+        val ungranted = requiredPermissions.filter {
+            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+        }
 
         if (ungranted.isNotEmpty()) {
             requestPermissions.launch(ungranted.toTypedArray())
@@ -109,7 +110,7 @@ class MainActivity : AppCompatActivity() {
             networkScanner.scanNetwork(object : NetworkScanner.ScanCallback {
                 override fun onDeviceFound(device: NetworkDevice) {
                     runOnUiThread {
-                        deviceAdapter.submitList(deviceAdapter.devices + device)
+                        deviceAdapter.submitList(deviceAdapter.getDevices() + device)
                         binding.emptyState.visibility = View.GONE
                     }
                 }
@@ -122,7 +123,11 @@ class MainActivity : AppCompatActivity() {
                         if (devices.isEmpty()) {
                             binding.emptyState.visibility = View.VISIBLE
                         }
-                        Toast.makeText(this@MainActivity, "${devices.size} ${getString(com.letmese.netscanner.R.string.devices_found)}", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(
+                            this@MainActivity,
+                            "${devices.size} ${getString(R.string.devices_found)}",
+                            Toast.LENGTH_SHORT
+                        ).show()
                     }
                 }
 
@@ -140,34 +145,35 @@ class MainActivity : AppCompatActivity() {
 
     private fun showNetworkInfo() {
         val info = networkScanner.getNetworkInfo()
-        bottomSheetBinding.tvSsid.text = info.ssid
-        bottomSheetBinding.tvBssid.text = info.bssid
-        bottomSheetBinding.tvLocalIp.text = info.localIp
-        bottomSheetBinding.tvGateway.text = info.gateway
-        bottomSheetBinding.tvSubnet.text = info.subnetMask
-        bottomSheetBinding.tvDns.text = info.dns
-        bottomSheetBinding.tvSignal.text = "${info.signalStrength}/5"
-        bottomSheetBinding.tvFrequency.text = "${info.frequency} MHz"
-        bottomSheetBinding.tvLinkSpeed.text = info.linkSpeed
+        val sheet = binding.bottomSheetNetworkInfo
+        sheet.findViewById<android.widget.TextView>(R.id.tvSsid).text = info.ssid
+        sheet.findViewById<android.widget.TextView>(R.id.tvBssid).text = info.bssid
+        sheet.findViewById<android.widget.TextView>(R.id.tvLocalIp).text = info.localIp
+        sheet.findViewById<android.widget.TextView>(R.id.tvGateway).text = info.gateway
+        sheet.findViewById<android.widget.TextView>(R.id.tvSubnet).text = info.subnetMask
+        sheet.findViewById<android.widget.TextView>(R.id.tvDns).text = info.dns
+        sheet.findViewById<android.widget.TextView>(R.id.tvSignal).text = "${info.signalStrength} dBm"
+        sheet.findViewById<android.widget.TextView>(R.id.tvFrequency).text = "${info.frequency} MHz"
+        sheet.findViewById<android.widget.TextView>(R.id.tvLinkSpeed).text = info.linkSpeed
 
         bottomSheetBehavior?.state = BottomSheetBehavior.STATE_EXPANDED
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         return when (item.itemId) {
-            com.letmese.netscanner.R.id.action_network_info -> {
+            R.id.action_network_info -> {
                 showNetworkInfo()
                 true
             }
-            com.letmese.netscanner.R.id.action_port_scanner -> {
+            R.id.action_port_scanner -> {
                 Toast.makeText(this, "Port Scanner coming soon!", Toast.LENGTH_SHORT).show()
                 true
             }
-            com.letmese.netscanner.R.id.action_settings -> {
+            R.id.action_settings -> {
                 Toast.makeText(this, "Settings coming soon!", Toast.LENGTH_SHORT).show()
                 true
             }
-            com.letmese.netscanner.R.id.action_about -> {
+            R.id.action_about -> {
                 Toast.makeText(this, "Net Scanner v1.0\nGlassy Material 3 Design", Toast.LENGTH_SHORT).show()
                 true
             }
