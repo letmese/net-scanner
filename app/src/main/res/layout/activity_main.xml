@@ -71,6 +71,8 @@
         style="@style/Widget.NetScanner.GlassFAB" />
 
     <!-- Bottom sheet for network info -->
-    <include layout="@layout/bottom_sheet_network_info" />
+    <include
+        android:id="@+id/bottomSheetNetworkInfo"
+        layout="@layout/bottom_sheet_network_info" />
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

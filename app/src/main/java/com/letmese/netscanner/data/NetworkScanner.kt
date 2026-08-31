@@ -1,9 +1,6 @@
 package com.letmese.netscanner.data
 
 import android.content.Context
-import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
-import android.net.wifi.WifiInfo
 import android.net.wifi.WifiManager
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
@@ -12,8 +9,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.net.InetAddress
@@ -56,15 +53,11 @@ class NetworkScanner(private val context: Context) {
 
                 // Ping sweep in parallel; collect reachable IPs
                 val reachableIps = ips.map { ip ->
-                    async {
-                        if (pingHost(ip)) ip else null
-                    }
+                    async { if (pingHost(ip)) ip else null }
                 }.awaitAll().filterNotNull()
 
                 val devices = withContext(Dispatchers.IO) {
-                    reachableIps.mapNotNull { ip ->
-                        scanDeviceSync(ip)
-                    }
+                    reachableIps.mapNotNull { ip -> scanDeviceSync(ip) }
                 }
 
                 devices.forEach { callback.onDeviceFound(it) }
@@ -77,8 +70,8 @@ class NetworkScanner(private val context: Context) {
     }
 
     /**
-     * Synchronous, non-suspend version of scanDevice. Caller must invoke from
-     * a coroutine context (already wrapped in withContext(Dispatchers.IO) above).
+     * Synchronous device scan. Caller must already be in a coroutine context
+     * (wrapped in withContext(Dispatchers.IO) above).
      */
     private fun scanDeviceSync(ip: String): NetworkDevice? {
         val name = getHostnameFromIp(ip) ?: "Unknown"
@@ -90,8 +83,8 @@ class NetworkScanner(private val context: Context) {
             name = name,
             mac = mac,
             vendor = vendor,
-            isReachable = true,
-            openPorts = openPorts
+            openPorts = openPorts,
+            isOnline = true
         )
     }
 
@@ -105,7 +98,7 @@ class NetworkScanner(private val context: Context) {
     }
 
     private fun getLocalIpAddress(): String? {
-        try {
+        return try {
             val interfaces = Collections.list(NetworkInterface.getNetworkInterfaces())
             for (intf in interfaces) {
                 val addrs = Collections.list(intf.inetAddresses)
@@ -115,16 +108,18 @@ class NetworkScanner(private val context: Context) {
                     }
                 }
             }
+            null
         } catch (e: Exception) {
             Log.e(TAG, "getLocalIpAddress error", e)
+            null
         }
-        return null
     }
 
     private fun getHostnameFromIp(ip: String): String? {
         return try {
             val address = InetAddress.getByName(ip)
-            address.hostName?.takeIf { it != ip }
+            val host = address.hostName
+            if (host != null && host != ip) host else null
         } catch (e: Exception) {
             null
         }
@@ -134,14 +129,15 @@ class NetworkScanner(private val context: Context) {
         return try {
             val process = Runtime.getRuntime().exec("ip neigh")
             val reader = BufferedReader(InputStreamReader(process.inputStream))
-            var line: String?
-            while (reader.readLine().also { line = it } != null) {
-                if (line != null && line.contains(ip)) {
-                    val parts = line.split("\\s+".toRegex()).dropLastWhile { it.isBlank() }
-                    if (parts.size >= 3) {
-                        val mac = parts[2]
-                        if (mac.matches("\\S+:\\S+:\\S+:\\S+:\\S+:\\S+".toRegex())) {
-                            return mac
+            reader.useLines { lines ->
+                for (line in lines) {
+                    if (line.contains(ip)) {
+                        val parts = line.split("\\s+".toRegex()).dropLastWhile { it.isBlank() }
+                        if (parts.size >= 3) {
+                            val mac = parts[2]
+                            if (mac.matches("\\S+:\\S+:\\S+:\\S+:\\S+:\\S+".toRegex())) {
+                                return mac
+                            }
                         }
                     }
                 }
@@ -173,15 +169,25 @@ class NetworkScanner(private val context: Context) {
         return COMMON_PORTS.filter { port -> isPortOpen(ip, port) }
     }
 
+    /**
+     * Synchronous, blocking port check. Uses runBlocking to call the
+     * suspending withTimeoutOrNull from a non-suspend context. The 500ms
+     * timeout caps each call so this won't hang.
+     */
     private fun isPortOpen(ip: String, port: Int): Boolean {
         return try {
-            withTimeoutOrNull(PORT_TIMEOUT_MS) {
-                Socket().apply {
-                    connect(java.net.InetSocketAddress(ip, port), PORT_TIMEOUT_MS.toInt())
-                    close()
+            runBlocking {
+                withContext(Dispatchers.IO) {
+                    try {
+                        Socket().use { socket ->
+                            socket.connect(java.net.InetSocketAddress(ip, port), PORT_TIMEOUT_MS.toInt())
+                            true
+                        }
+                    } catch (e: Exception) {
+                        false
+                    }
                 }
-                true
-            } ?: false
+            }
         } catch (e: Exception) {
             false
         }
@@ -207,11 +213,12 @@ class NetworkScanner(private val context: Context) {
         return try {
             val process = Runtime.getRuntime().exec("ip route")
             val reader = BufferedReader(InputStreamReader(process.inputStream))
-            var line: String?
-            while (reader.readLine().also { line = it } != null) {
-                if (line != null && line.startsWith("default")) {
-                    val parts = line.split("\\s+".toRegex()).dropLastWhile { it.isBlank() }
-                    if (parts.size >= 3) return parts[2]
+            reader.useLines { lines ->
+                for (line in lines) {
+                    if (line.startsWith("default")) {
+                        val parts = line.split("\\s+".toRegex()).dropLastWhile { it.isBlank() }
+                        if (parts.size >= 3) return parts[2]
+                    }
                 }
             }
             "Unknown"
@@ -224,14 +231,15 @@ class NetworkScanner(private val context: Context) {
         return try {
             val process = Runtime.getRuntime().exec("ip addr")
             val reader = BufferedReader(InputStreamReader(process.inputStream))
-            var line: String?
-            while (reader.readLine().also { line = it } != null) {
-                if (line != null && line.contains("inet ") && !line.contains("127.0.0.1")) {
-                    val parts = line.split("\\s+".toRegex()).dropLastWhile { it.isBlank() }
-                    for (part in parts) {
-                        if (part.contains("/")) {
-                            val cidr = part.split("/")[1].toInt()
-                            return cidrToSubnet(cidr)
+            reader.useLines { lines ->
+                for (line in lines) {
+                    if (line.contains("inet ") && !line.contains("127.0.0.1")) {
+                        val parts = line.split("\\s+".toRegex()).dropLastWhile { it.isBlank() }
+                        for (part in parts) {
+                            if (part.contains("/")) {
+                                val cidr = part.split("/")[1].toInt()
+                                return cidrToSubnet(cidr)
+                            }
                         }
                     }
                 }

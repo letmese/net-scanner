@@ -30,7 +30,7 @@ class DeviceAdapter(
             // Expand/collapse on whole card click
             binding.root.setOnClickListener {
                 device.isExpanded = !device.isExpanded
-                notifyItemChanged(bindingAdapterPosition)
+                notifyItemChanged(adapterPosition)
                 onDeviceClick(device)
             }
         }
