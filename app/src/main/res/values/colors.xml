@@ -39,4 +39,5 @@
     <color name="online">#4CAF50</color>
     <color name="offline">#9E9E9E</color>
     <color name="warning">#FF9800</color>
+    <color name="ic_launcher_background">#6750A4</color>
 </resources>
