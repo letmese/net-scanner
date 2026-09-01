@@ -37,6 +37,7 @@ public class PortScanActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_port_scan);
+        GlassWindow.apply(this);
 
         ip = getIntent().getStringExtra("ip");
         tvTarget = findViewById(R.id.tv_target);

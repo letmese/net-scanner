@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- API 31+ real glass: translucent window + system background blur behind the app -->
+    <style name="AppTheme" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:windowBackground">@drawable/bg_root_translucent</item>
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackgroundBlurRadius">80dp</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">#FF060910</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="colorAccent">#FF4CC2FF</item>
+        <item name="colorPrimary">#0C1220</item>
+        <item name="colorPrimaryDark">#060910</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:windowActivityTransitions">true</item>
+        <item name="android:windowContentTransitions">true</item>
+        <item name="android:windowAllowEnterTransitionOverlap">true</item>
+        <item name="android:windowAllowReturnTransitionOverlap">true</item>
+        <item name="android:alertDialogTheme">@style/GlassDialogTheme</item>
+    </style>
+</resources>

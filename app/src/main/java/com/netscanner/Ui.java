@@ -45,7 +45,9 @@ public final class Ui {
     public static LinearLayout root(Context c) {
         LinearLayout r = new LinearLayout(c);
         r.setOrientation(LinearLayout.VERTICAL);
-        r.setBackgroundResource(R.drawable.bg_root);
+        // Transparent: the real frosted aurora backdrop is injected by GlassWindow
+        // (window-level blur on API 31+, opaque window background below).
+        r.setBackgroundColor(0x00000000);
         return r;
     }
 

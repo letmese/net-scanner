@@ -32,6 +32,7 @@ public class LocalPortsActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_local_ports);
+        GlassWindow.apply(this);
 
         findViewById(R.id.btn_back).setOnClickListener(v -> finish());
         tvNote = findViewById(R.id.tv_note);

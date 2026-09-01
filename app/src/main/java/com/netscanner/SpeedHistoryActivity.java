@@ -28,6 +28,7 @@ public class SpeedHistoryActivity extends AppCompatActivity {
         tv.setTextColor(0xFFB9B9C9); tv.setTextSize(14);
         tv.setPadding(Ui.dp(this, 20), Ui.dp(this, 10), Ui.dp(this, 20), Ui.dp(this, 20));
         setContentView(root);
+        GlassWindow.apply(this);
 
         // chart of download speeds (oldest -> newest)
         try {

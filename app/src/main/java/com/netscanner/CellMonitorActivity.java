@@ -130,6 +130,7 @@ public class CellMonitorActivity extends AppCompatActivity {
         tabPages[4] = page(content, 4); buildInfoTab(tabPages[4]);
         tabPages[5] = page(content, 5); buildMapTab(tabPages[5]);
         setContentView(root);
+        GlassWindow.apply(this);
         selectTab(0);
 
         loadPersistedLog();

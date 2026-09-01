@@ -13,6 +13,7 @@ public class LogsActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_logs);
+        GlassWindow.apply(this);
 
         findViewById(R.id.btn_back).setOnClickListener(v -> finish());
         TextView tv = findViewById(R.id.tv_log);

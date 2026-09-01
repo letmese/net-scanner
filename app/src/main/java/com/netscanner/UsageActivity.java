@@ -32,6 +32,7 @@ public class UsageActivity extends AppCompatActivity {
         tv.setPadding(Ui.dp(this, 20), Ui.dp(this, 10), Ui.dp(this, 20), Ui.dp(this, 20));
         ScrollView sc = new ScrollView(this); sc.addView(tv); root.addView(sc);
         setContentView(root);
+        GlassWindow.apply(this);
 
         try {
             android.content.SharedPreferences sp = getSharedPreferences("netscanner", 0);

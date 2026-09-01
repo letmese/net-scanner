@@ -21,6 +21,7 @@ public class SnifferActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_sniffer);
+        com.netscanner.GlassWindow.apply(this);
 
         out = findViewById(R.id.tv_output);
         findViewById(R.id.btn_back).setOnClickListener(v -> finish());

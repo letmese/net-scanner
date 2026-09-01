@@ -27,6 +27,7 @@ public class SshActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_ssh);
+        com.netscanner.GlassWindow.apply(this);
 
         findViewById(R.id.btn_back).setOnClickListener(v -> {
             disconnect();

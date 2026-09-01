@@ -1,19 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Frosted glass header band: bright top, soft bottom fade, rounded base -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- transparent frosted surface (bright top -> clear base) -->
     <item>
         <shape>
             <gradient android:angle="270"
-                android:startColor="#F2233048"
-                android:centerColor="#C0121A2A"
-                android:endColor="#30121A2A" />
+                android:startColor="#99233048"
+                android:centerColor="#4D121A2A"
+                android:endColor="#14121A2A" />
             <corners android:bottomLeftRadius="20dp" android:bottomRightRadius="20dp" />
+        </shape>
+    </item>
+    <!-- subtle white tint layer -->
+    <item android:top="2dp" android:left="2dp" android:right="2dp" android:bottom="8dp">
+        <shape>
+            <gradient android:angle="270"
+                android:startColor="#14FFFFFF"
+                android:endColor="#00FFFFFF" />
+            <corners android:bottomLeftRadius="18dp" android:bottomRightRadius="18dp" />
         </shape>
     </item>
     <item android:top="1dp" android:left="1dp" android:right="1dp" android:bottom="10dp">
         <shape>
             <gradient android:angle="270"
-                android:startColor="#38FFFFFF"
+                android:startColor="#2EFFFFFF"
                 android:endColor="#00FFFFFF" />
             <corners android:bottomLeftRadius="20dp" android:bottomRightRadius="20dp" />
         </shape>

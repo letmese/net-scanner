@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Translucent window background for real glass (API 31+): dark tinted base with faint
+     aurora hints, kept translucent so the system-blurred wallpaper shows through behind it. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- translucent dark glass base (lets the blurred backdrop behind show through) -->
+    <item>
+        <shape>
+            <gradient android:angle="270"
+                android:startColor="#A6141C2E"
+                android:centerColor="#9E0C1220"
+                android:endColor="#8A060910" />
+        </shape>
+    </item>
+    <!-- faint aurora glow: cool cyan bleeding from the top -->
+    <item android:top="-320dp" android:left="-120dp" android:right="-120dp">
+        <shape android:shape="oval">
+            <gradient android:type="radial"
+                android:centerX="0.5" android:centerY="0.5"
+                android:startColor="#1E38BDF8"
+                android:endColor="#0038BDF8"
+                android:gradientRadius="420dp" />
+        </shape>
+    </item>
+    <!-- faint aurora glow: violet/magenta on the right -->
+    <item android:top="60dp" android:left="180dp" android:right="-260dp" android:bottom="-120dp">
+        <shape android:shape="oval">
+            <gradient android:type="radial"
+                android:centerX="0.5" android:centerY="0.5"
+                android:startColor="#168181F2"
+                android:endColor="#008181F2"
+                android:gradientRadius="360dp" />
+        </shape>
+    </item>
+</layer-list>

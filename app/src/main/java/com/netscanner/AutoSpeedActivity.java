@@ -165,6 +165,7 @@ public class AutoSpeedActivity extends AppCompatActivity {
         root.addView(fRow);
 
         setContentView(root);
+        GlassWindow.apply(this);
     }
 
     private final Runnable refresher = new Runnable() {

@@ -19,6 +19,7 @@ public class NetDiagActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_netdiag);
+        com.netscanner.GlassWindow.apply(this);
 
         findViewById(R.id.btn_back).setOnClickListener(v -> finish());
         output = findViewById(R.id.tv_output);

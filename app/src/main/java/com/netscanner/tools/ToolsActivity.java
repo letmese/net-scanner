@@ -24,6 +24,7 @@ public class ToolsActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_tools_hub);
+        com.netscanner.GlassWindow.apply(this);
 
         LinearLayout grid = findViewById(R.id.tool_grid);
         findViewById(R.id.btn_back).setOnClickListener(v -> finish());

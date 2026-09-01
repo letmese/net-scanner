@@ -34,6 +34,7 @@ public class WifiAnalyzerActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_wifi_analyzer);
+        com.netscanner.GlassWindow.apply(this);
 
         findViewById(R.id.btn_back).setOnClickListener(v -> finish());
         RecyclerView list = findViewById(R.id.list);

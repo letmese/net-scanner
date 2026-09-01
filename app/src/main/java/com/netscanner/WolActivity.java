@@ -38,6 +38,7 @@ public class WolActivity extends AppCompatActivity {
         list.setOrientation(LinearLayout.VERTICAL);
         ScrollView sc = new ScrollView(this); sc.addView(list); root.addView(sc);
         setContentView(root);
+        GlassWindow.apply(this);
         render();
     }
 

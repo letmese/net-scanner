@@ -8,22 +8,22 @@
     <color name="glass_base_mid">#0C1220</color>
     <color name="glass_base_top">#141C2E</color>
 
-    <!-- ===== Frosted surface tones ===== -->
-    <color name="glass_surface">#E8182132</color>
-    <color name="glass_surface_strong">#F21F2B40</color>
-    <color name="glass_surface_soft">#D40E1728</color>
-    <color name="glass_surface_sheet">#E6151F31</color>
+    <!-- ===== Frosted surface tones (more transparent for real glass) ===== -->
+    <color name="glass_surface">#66151F31</color>
+    <color name="glass_surface_strong">#731D2B40</color>
+    <color name="glass_surface_soft">#4A0E1728</color>
+    <color name="glass_surface_sheet">#5E141F31</color>
 
     <!-- ===== Glass tints (white alpha layers) ===== -->
-    <color name="glass_tint_high">#38FFFFFF</color>
-    <color name="glass_tint_mid">#1EFFFFFF</color>
-    <color name="glass_tint_low">#0AFFFFFF</color>
-    <color name="glass_tint_faint">#08FFFFFF</color>
+    <color name="glass_tint_high">#26FFFFFF</color>
+    <color name="glass_tint_mid">#14FFFFFF</color>
+    <color name="glass_tint_low">#08FFFFFF</color>
+    <color name="glass_tint_faint">#05FFFFFF</color>
 
     <!-- ===== Hairline borders ===== -->
-    <color name="hairline_glass">#4D9FB6D0</color>
-    <color name="hairline_bright">#5C9FB6D0</color>
-    <color name="hairline_white">#33FFFFFF</color>
+    <color name="hairline_glass">#669FB6D0</color>
+    <color name="hairline_bright">#7A9FB6D0</color>
+    <color name="hairline_white">#3DFFFFFF</color>
 
     <!-- ===== Accent glows ===== -->
     <color name="accent_glow">#FF4CC2FF</color>

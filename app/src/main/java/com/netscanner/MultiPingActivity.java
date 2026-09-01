@@ -80,6 +80,7 @@ public class MultiPingActivity extends AppCompatActivity {
         root.addView(sc, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
         setContentView(root);
+        GlassWindow.apply(this);
 
         String gw = "Gateway";
         try {

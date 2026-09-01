@@ -29,6 +29,7 @@ public class SignalActivity extends AppCompatActivity {
         info.setPadding(Ui.dp(this, 20), 0, Ui.dp(this, 20), 0);
         root.addView(info);
         setContentView(root);
+        GlassWindow.apply(this);
     }
 
     private final Runnable tick = new Runnable() {

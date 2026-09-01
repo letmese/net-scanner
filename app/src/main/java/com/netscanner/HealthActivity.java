@@ -35,6 +35,7 @@ public class HealthActivity extends AppCompatActivity {
         detail.setPadding(Ui.dp(this, 20), 0, Ui.dp(this, 20), Ui.dp(this, 20));
         ScrollView sc = new ScrollView(this); sc.addView(detail); root.addView(sc);
         setContentView(root);
+        GlassWindow.apply(this);
         runChecks();
     }
 

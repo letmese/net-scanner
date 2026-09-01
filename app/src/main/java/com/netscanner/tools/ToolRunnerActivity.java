@@ -48,6 +48,7 @@ public class ToolRunnerActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_tool_runner);
+        com.netscanner.GlassWindow.apply(this);
 
         tool = getIntent().getStringExtra("tool");
         String title = getIntent().getStringExtra("title");

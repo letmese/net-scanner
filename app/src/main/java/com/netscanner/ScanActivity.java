@@ -52,6 +52,7 @@ public class ScanActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_scan);
+        GlassWindow.apply(this);
         sp = getSharedPreferences("netscanner", 0);
 
         // crash trap: persist any fatal stack trace, show it on next launch

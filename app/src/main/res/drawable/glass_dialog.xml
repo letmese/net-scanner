@@ -1,29 +1,36 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Frosted glass dialog surface: shadow, translucent body, top shine -->
+<!-- Frosted glass dialog surface: shadow, transparent body, white tint, top shine -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- soft under-shadow -->
     <item android:top="5dp" android:left="3dp" android:right="3dp" android:bottom="-2dp">
         <shape>
             <corners android:radius="22dp" />
-            <solid android:color="#40000000" />
+            <solid android:color="#33000000" />
         </shape>
     </item>
-    <!-- frosted translucent surface -->
+    <!-- transparent frosted surface (~40-55% alpha) -->
     <item>
         <shape>
             <gradient android:angle="270"
-                android:startColor="#F2202C42"
-                android:centerColor="#E9162032"
-                android:endColor="#D80E1728" />
+                android:startColor="#B8202C42"
+                android:centerColor="#96162032"
+                android:endColor="#730E1728" />
             <corners android:radius="22dp" />
-            <stroke android:width="1dp" android:color="#5C9FB6D0" />
+            <stroke android:width="1dp" android:color="#5E9FB6D0" />
+        </shape>
+    </item>
+    <!-- subtle white tint layer -->
+    <item android:top="3dp" android:left="3dp" android:right="3dp" android:bottom="3dp">
+        <shape>
+            <corners android:radius="19dp" />
+            <solid android:color="#12FFFFFF" />
         </shape>
     </item>
     <!-- top edge shine -->
     <item android:top="1dp" android:left="1dp" android:right="1dp" android:bottom="34dp">
         <shape>
             <gradient android:angle="270"
-                android:startColor="#33FFFFFF"
+                android:startColor="#2AFFFFFF"
                 android:endColor="#00FFFFFF" />
             <corners android:radius="21dp" />
         </shape>

@@ -1,29 +1,37 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Frosted glass sheet (list rows / panels): soft shadow, translucent body, top shine -->
+<!-- Frosted glass sheet (list rows / panels): soft shadow, transparent body,
+     white tint layer, top shine. Blur comes from GlassWindow backdrop. -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- soft under-shadow -->
     <item android:top="3dp" android:left="1dp" android:right="1dp" android:bottom="-1dp">
         <shape>
             <corners android:radius="18dp" />
-            <solid android:color="#33000000" />
+            <solid android:color="#26000000" />
         </shape>
     </item>
-    <!-- frosted translucent surface -->
+    <!-- transparent frosted surface (~40-50% alpha) -->
     <item>
         <shape>
             <gradient android:angle="270"
-                android:startColor="#F01D2A40"
-                android:centerColor="#E6151F31"
-                android:endColor="#D40E1728" />
+                android:startColor="#A91D2A40"
+                android:centerColor="#8A151F31"
+                android:endColor="#660E1728" />
             <corners android:radius="18dp" />
-            <stroke android:width="1dp" android:color="#4D9FB6D0" />
+            <stroke android:width="1dp" android:color="#529FB6D0" />
+        </shape>
+    </item>
+    <!-- subtle white tint layer -->
+    <item android:top="2dp" android:left="2dp" android:right="2dp" android:bottom="2dp">
+        <shape>
+            <corners android:radius="16dp" />
+            <solid android:color="#10FFFFFF" />
         </shape>
     </item>
     <!-- top edge shine -->
     <item android:top="1dp" android:left="1dp" android:right="1dp" android:bottom="22dp">
         <shape>
             <gradient android:angle="270"
-                android:startColor="#2EFFFFFF"
+                android:startColor="#22FFFFFF"
                 android:endColor="#00FFFFFF" />
             <corners android:radius="17dp" />
         </shape>

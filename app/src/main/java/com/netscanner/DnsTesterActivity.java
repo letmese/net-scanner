@@ -126,6 +126,7 @@ public class DnsTesterActivity extends AppCompatActivity {
 
         renderInitial();
         setContentView(root);
+        GlassWindow.apply(this);
     }
 
     @Override protected void onResume() {
