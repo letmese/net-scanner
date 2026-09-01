@@ -85,13 +85,14 @@ public final class GlassWindow {
                     FROST_BLUR, FROST_BLUR, Shader.TileMode.CLAMP));
 
             // Fill the wallpaper once layout is measured (center-crop, no distortion).
+            final FrameLayout frostRef = frost;
             content.post(new Runnable() {
                 @Override public void run() {
-                    View wv = frost.findViewWithTag(WALL_TAG);
-                    if (wv == null || frost.getWidth() <= 0 || frost.getHeight() <= 0) return;
+                    View wv = frostRef.findViewWithTag(WALL_TAG);
+                    if (wv == null || frostRef.getWidth() <= 0 || frostRef.getHeight() <= 0) return;
                     Bitmap bmp = loadWallpaper(activity);
                     if (bmp == null) return;
-                    Bitmap cropped = centerCrop(bmp, frost.getWidth(), frost.getHeight());
+                    Bitmap cropped = centerCrop(bmp, frostRef.getWidth(), frostRef.getHeight());
                     if (cropped != null) {
                         wv.setBackground(new BitmapDrawable(activity.getResources(), cropped));
                     }
