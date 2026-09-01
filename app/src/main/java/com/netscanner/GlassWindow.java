@@ -25,9 +25,10 @@ import android.view.WindowManager;
  * </ol>
  *
  * <p>Cross-window blur availability is queried with
- * {@link WindowManager#isCrossWindowBlurEnabled()} and tracked with
- * {@link WindowManager#addCrossWindowBlurEnabledListener}; when blur is disabled the
+ * {@link WindowManager#isCrossWindowBlurEnabled()}; when blur is disabled the
  * window background falls back to the opaque aurora so readability is preserved.
+ * (The runtime listener for blur toggling is not part of the public SDK, so the
+ * state is sampled on each {@link #apply} call.)
  *
  * <p>On API &lt; 31 this is a no-op: the theme provides the opaque aurora background.
  */
@@ -60,17 +61,6 @@ public final class GlassWindow {
         } catch (Throwable ignored) {
         }
         applyState(activity, enabled);
-
-        try {
-            wm.addCrossWindowBlurEnabledListener(new WindowManager.CrossWindowBlurEnabledListener() {
-                @Override
-                public void onCrossWindowBlurEnabledChanged(boolean blurEnabled) {
-                    applyState(activity, blurEnabled);
-                }
-            });
-        } catch (Throwable ignored) {
-            // listener registration is best-effort on some builds
-        }
     }
 
     private static void applyState(Activity activity, boolean enabled) {
