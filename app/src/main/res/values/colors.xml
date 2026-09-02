@@ -25,11 +25,20 @@
     <color name="hairline_bright">#7A9FB6D0</color>
     <color name="hairline_white">#3DFFFFFF</color>
 
-    <!-- ===== Accent glows ===== -->
-    <color name="accent_glow">#FF4CC2FF</color>
-    <color name="accent_glow_soft">#334CC2FF</color>
-    <color name="accent_cyan">#38BDF8</color>
-    <color name="accent_violet">#8181F2</color>
+    <!-- ===== Neon palette (mockup #4: deep navy + cyan/magenta neon) ===== -->
+    <color name="neonCyan">#00F0FF</color>
+    <color name="neonMagenta">#FF0080</color>
+    <color name="glassCardBase">#B90E0E1E</color>
+    <color name="neonAccent">#FF0080</color>
+    <color name="neonSecondary">#00F0FF</color>
+    <color name="textPrimary">#F3F5FB</color>
+    <color name="textSecondary">#9FB0D0</color>
+
+    <!-- ===== Accent glows (retargeted to neon set) ===== -->
+    <color name="accent_glow">#FF0080</color>
+    <color name="accent_glow_soft">#33FF0080</color>
+    <color name="accent_cyan">#00F0FF</color>
+    <color name="accent_violet">#4C00F0FF</color>
 
     <!-- ===== Semantic accents ===== -->
     <color name="good_glow">#34D399</color>

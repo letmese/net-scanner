@@ -1,15 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Glowing glass accent button: cyan tint gradient, luminous hairline, rounded -->
+<!-- Neon primary accent button (mockup #4, scan trigger): magenta tint gradient,
+     luminous magenta hairline, rounded. Dark label text stays readable on it. -->
 <ripple xmlns:android="http://schemas.android.com/apk/res/android"
     android:color="#40FFFFFF">
     <item>
         <shape>
             <gradient android:angle="270"
-                android:startColor="#594CC2FF"
-                android:centerColor="#334CC2FF"
-                android:endColor="#224CC2FF" />
-            <stroke android:width="1dp" android:color="#8C9CD9FF" />
-            <corners android:radius="18dp" />
+                android:startColor="#E6FF0080"
+                android:centerColor="#BAFF0080"
+                android:endColor="#8AFF0080" />
+            <stroke android:width="1dp" android:color="#E6FF66B3" />
+            <corners android:radius="20dp" />
         </shape>
     </item>
 </ripple>

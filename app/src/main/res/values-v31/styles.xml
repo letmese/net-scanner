@@ -8,7 +8,7 @@
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">#FF060910</item>
         <item name="android:windowLightStatusBar">false</item>
-        <item name="colorAccent">#FF4CC2FF</item>
+        <item name="colorAccent">#FF0080</item>
         <item name="colorPrimary">#0C1220</item>
         <item name="colorPrimaryDark">#060910</item>
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>

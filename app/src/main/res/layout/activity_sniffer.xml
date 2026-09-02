@@ -67,7 +67,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:textSize="12sp"
-            android:textColor="#93C5FD"
+            android:textColor="#00F0FF"
             android:fontFamily="monospace" />
     </ScrollView>
 </LinearLayout>

@@ -1,36 +1,26 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- In-window frosted aurora layer (API 31+): pure translucent gradient with NO dark
-     base, so it adds colour + frost when blurred by RenderEffect while the
-     system-blurred wallpaper behind the window still shows through. -->
+<!-- In-window neon frost layer (API 31+, mockup #4): pure translucent gradient with
+     NO dark base, so it adds neon colour + frost when blurred by RenderEffect while
+     the system-blurred wallpaper behind the window still shows through. -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- aurora glow: cool cyan bleeding from the top -->
-    <item android:top="-320dp" android:left="-120dp" android:right="-120dp">
+    <!-- neon cyan glow bleeding from the top-right -->
+    <item android:top="-300dp" android:left="150dp" android:right="-180dp" android:bottom="120dp">
         <shape android:shape="oval">
             <gradient android:type="radial"
                 android:centerX="0.5" android:centerY="0.5"
-                android:startColor="#3338BDF8"
-                android:endColor="#0038BDF8"
-                android:gradientRadius="420dp" />
+                android:startColor="#4A00F0FF"
+                android:endColor="#0000F0FF"
+                android:gradientRadius="430dp" />
         </shape>
     </item>
-    <!-- aurora glow: deep blue on the left -->
-    <item android:top="-60dp" android:left="-260dp" android:right="140dp" android:bottom="-160dp">
+    <!-- neon magenta glow bleeding from the bottom-left -->
+    <item android:top="140dp" android:left="-240dp" android:right="140dp" android:bottom="-240dp">
         <shape android:shape="oval">
             <gradient android:type="radial"
                 android:centerX="0.5" android:centerY="0.5"
-                android:startColor="#2A4C6BC0"
-                android:endColor="#004C6BC0"
-                android:gradientRadius="380dp" />
-        </shape>
-    </item>
-    <!-- aurora glow: violet/magenta on the right -->
-    <item android:top="60dp" android:left="180dp" android:right="-260dp" android:bottom="-120dp">
-        <shape android:shape="oval">
-            <gradient android:type="radial"
-                android:centerX="0.5" android:centerY="0.5"
-                android:startColor="#248181F2"
-                android:endColor="#008181F2"
-                android:gradientRadius="360dp" />
+                android:startColor="#45FF0080"
+                android:endColor="#00FF0080"
+                android:gradientRadius="400dp" />
         </shape>
     </item>
 </layer-list>

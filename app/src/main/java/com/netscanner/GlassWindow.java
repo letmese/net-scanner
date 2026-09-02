@@ -20,6 +20,12 @@ import android.widget.FrameLayout;
 /**
  * Guaranteed frosted-glass backdrop for NetScanner v4.1 screens (visual layer only).
  *
+ * <p>Neon Glass theme (mockup #4): the in-app wallpaper layer is blurred in-place with
+ * {@link RenderEffect} (frost ~24px). The translucent {@code bg_root_translucent} tint
+ * on top carries the neon palette - deep navy-black base, cyan orb bleeding from the
+ * top-right, magenta orb bleeding from the bottom-left - so the neon glow survives the
+ * blur on every ROM.
+ *
  * <p>Instead of depending on the system cross-window blur (which many OEM ROMs -
  * including ColorOS - disable, producing plain translucent boxes), this inserts an
  * in-window frost layer whose background is the device wallpaper, blurred with
@@ -35,7 +41,10 @@ public final class GlassWindow {
     private static final String BACKDROP_TAG = "netscanner_glass_backdrop";
     private static final String WALL_TAG = "netscanner_wallpaper";
     private static final int WINDOW_BLUR_RADIUS = 80;      // px behind the window (enhancement)
-    private static final float FROST_BLUR = 24f;           // px in-app frost
+    private static final float FROST_BLUR = 24f;           // px in-app frost (neon glass)
+
+    /** Neon glass tint (mockup #4): translucent navy base + cyan top-right / magenta bottom-left. */
+    private static final int TINT_BG_RES = R.drawable.bg_root_translucent;
 
     private GlassWindow() {}
 
@@ -60,7 +69,7 @@ public final class GlassWindow {
 
         // System blur as enhancement only; never relied upon for the glass look.
         window.setBackgroundBlurRadius(sysBlur ? WINDOW_BLUR_RADIUS : 0);
-        window.setBackgroundDrawableResource(R.drawable.bg_root_translucent);
+        window.setBackgroundDrawableResource(TINT_BG_RES);
 
         FrameLayout frost = (FrameLayout) content.findViewWithTag(BACKDROP_TAG);
         if (frost == null) {
@@ -73,7 +82,7 @@ public final class GlassWindow {
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
             View tint = new View(activity);
-            tint.setBackgroundResource(R.drawable.bg_root_translucent);
+            tint.setBackgroundResource(TINT_BG_RES);
             frost.addView(tint, new ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
