@@ -9,6 +9,8 @@ import android.telephony.CellInfoGsm
 import android.telephony.CellInfoLte
 import android.telephony.CellInfoNr
 import android.telephony.CellInfoWcdma
+import android.telephony.SubscriptionManager
+import android.telephony.SignalStrength
 import android.telephony.TelephonyManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -35,6 +37,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -74,6 +77,9 @@ import kotlin.math.abs
 
 // ─────────────────────────── Ping Monitor ───────────────────────────
 
+/** One active SIM subscription (v5.1.1 dual-SIM support). */
+private data class SimEntry(val subId: Int, val slot: Int, val name: String, val carrier: String)
+
 /** Legacy CellMonitorActivity: live signal dashboard, neighbor cells, CSV log. */
 @Composable
 fun CellMonitorScreen(nav: Navigator) {
@@ -89,8 +95,62 @@ fun CellMonitorScreen(nav: Navigator) {
     val permLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted = it }
+    var phoneGranted by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(ctx, Manifest.permission.READ_PHONE_STATE) ==
+                PackageManager.PERMISSION_GRANTED
+        )
+    }
+    val phoneLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { phoneGranted = it }
 
     var monitoring by remember { mutableStateOf(CellService.running) }
+
+    // v5.1.1 dual-SIM: enumerate every active subscription and build a
+    // per-subscription TelephonyManager. The selector is hidden entirely
+    // when only one SIM is active — single-SIM devices render exactly as
+    // before, with no broken empty section.
+    val sims = remember { mutableStateListOf<SimEntry>() }
+    var selSub by remember { mutableStateOf<Int?>(null) }
+    LaunchedEffect(phoneGranted) {
+        if (!phoneGranted) {
+            sims.clear()
+            selSub = null
+            return@LaunchedEffect
+        }
+        try {
+            val sm = ctx.getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE)
+                as? SubscriptionManager
+            val list = sm?.activeSubscriptionInfoList ?: emptyList()
+            sims.clear()
+            list.forEach { si ->
+                sims.add(
+                    SimEntry(
+                        si.subscriptionId,
+                        si.simSlotIndex,
+                        si.displayName?.toString()?.ifBlank { null } ?: "SIM",
+                        si.carrierName?.toString().orEmpty()
+                    )
+                )
+            }
+            selSub = when {
+                sims.size <= 1 -> null
+                sims.any { it.subId == selSub } -> selSub
+                else -> sims[0].subId
+            }
+        } catch (_: Exception) {
+            sims.clear()
+            selSub = null
+        }
+    }
+    // Per-SIM TelephonyManager: the selected subscription when dual-SIM,
+    // the device default otherwise.
+    val activeTm = remember(selSub) {
+        val s = selSub
+        if (s == null) tm else tm.createForSubscriptionId(s)
+    }
+    val currentTm by rememberUpdatedState(activeTm)
     var dbm by remember { mutableStateOf<Int?>(null) }
     var asu by remember { mutableIntStateOf(-1) }
     var bars by remember { mutableIntStateOf(0) }
@@ -108,55 +168,85 @@ fun CellMonitorScreen(nav: Navigator) {
     val timeFmt = remember { SimpleDateFormat("HH:mm:ss", Locale.US) }
 
     // 1 s sampling loop — mirrors the legacy rolling 4-minute plot.
+    // v5.1.1: reads signal DIRECTLY from the per-SIM TelephonyManager every
+    // second (no listener permission traps), falling back to CellService
+    // state when READ_PHONE_STATE is missing. This is what brings the
+    // Gauges tab to life: the old path relied solely on the service
+    // listener, which Android 10/11+ silently mutes without permissions,
+    // so dbm stayed null and the gauge rendered nothing forever.
     LaunchedEffect(Unit) {
         while (true) {
-            val d = CellService.lastDbm
-            if (d != Int.MAX_VALUE) {
-                dbm = d
-                asu = CellService.lastAsu
-                bars = CellService.lastBars
-                samples.add(d.toFloat())
+            var d: Int? = null
+            if (phoneGranted) {
+                try {
+                    val ss = currentTm.signalStrength
+                    if (ss != null) {
+                        // getDbm()/getAsuLevel() are not in the public SDK
+                        // stubs — use the reflection helper (same as service).
+                        val v = CellService.cellDbm(ss)
+                        if (v != Int.MAX_VALUE) {
+                            d = v
+                            asu = try {
+                                SignalStrength::class.java.getMethod("getAsuLevel")
+                                    .invoke(ss) as Int
+                            } catch (_: Exception) { -1 }
+                            bars = ss.level
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
+            if (d == null) {
+                val s = CellService.lastDbm
+                if (s != Int.MAX_VALUE) {
+                    d = s
+                    asu = CellService.lastAsu
+                    bars = CellService.lastBars
+                }
+            }
+            val dd = d
+            if (dd != null) {
+                dbm = dd
+                samples.add(dd.toFloat())
                 if (samples.size > 240) samples.removeAt(0)
-                csvRows.add("${System.currentTimeMillis()},$d,${CellService.lastAsu},${CellService.lastBars}")
+                csvRows.add("${System.currentTimeMillis()},$dd,$asu,$bars")
                 if (csvRows.size > 2000) csvRows.removeAt(0)
                 // Log tab: record every >=3 dB shift or bar change (legacy log tab parity)
-                val lb = CellService.lastBars
                 val prev = lastLoggedDbm
-                if (prev == null || abs(d - prev) >= 3 || lb != lastLoggedBars) {
+                if (prev == null || abs(dd - prev) >= 3 || bars != lastLoggedBars) {
                     val dir = when {
                         prev == null -> "  first"
-                        d > prev -> "  ▲ +${d - prev}"
-                        d < prev -> "  ▼ ${d - prev}"
+                        dd > prev -> "  ▲ +${dd - prev}"
+                        dd < prev -> "  ▼ ${dd - prev}"
                         else -> ""
                     }
                     val tag = when {
-                        lb > lastLoggedBars && lastLoggedBars >= 0 -> "  (bars up)"
-                        lb < lastLoggedBars && lastLoggedBars >= 0 -> "  (bars down)"
+                        bars > lastLoggedBars && lastLoggedBars >= 0 -> "  (bars up)"
+                        bars < lastLoggedBars && lastLoggedBars >= 0 -> "  (bars down)"
                         else -> ""
                     }
-                    events.add(0, "${timeFmt.format(Date())}  $d dBm  ${CellService.barsStr(lb)}$dir$tag")
+                    events.add(0, "${timeFmt.format(Date())}  $dd dBm  ${CellService.barsStr(bars)}$dir$tag")
                     if (events.size > 150) events.removeAt(events.size - 1)
-                    lastLoggedDbm = d
-                    lastLoggedBars = lb
+                    lastLoggedDbm = dd
+                    lastLoggedBars = bars
                 }
             }
             delay(1000)
         }
     }
 
-    // Carrier / tech / neighbor-cell refresh every 3 s.
-    LaunchedEffect(granted) {
+    // Carrier / tech / neighbor-cell refresh every 3 s (selected SIM).
+    LaunchedEffect(granted, selSub) {
         while (true) {
             tech = try {
-                CellService.networkTypeName(tm.dataNetworkType)
+                CellService.networkTypeName(currentTm.dataNetworkType)
             } catch (_: Exception) { "n/a" }
             operator = try {
-                tm.networkOperatorName.ifBlank { "unknown" }
+                currentTm.networkOperatorName.ifBlank { "unknown" }
             } catch (_: Exception) { "unknown" }
             if (granted) {
                 neighbors.clear()
                 try {
-                    for (ci in tm.allCellInfo ?: emptyList()) {
+                    for (ci in currentTm.allCellInfo ?: emptyList()) {
                         val line = when (ci) {
                             is CellInfoLte ->
                                 "LTE   PCI ${ci.cellIdentity.pci}  EARFCN ${ci.cellIdentity.earfcn}" +
@@ -219,6 +309,12 @@ fun CellMonitorScreen(nav: Navigator) {
                     permLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
                 })
             }
+            if (!phoneGranted) {
+                Spacer(Modifier.width(8.dp))
+                GlassButton("Grant Phone", {
+                    phoneLauncher.launch(Manifest.permission.READ_PHONE_STATE)
+                })
+            }
             Spacer(Modifier.weight(1f))
             Text(
                 dbm?.let { "$it dBm" } ?: "--",
@@ -242,6 +338,29 @@ fun CellMonitorScreen(nav: Navigator) {
                         fontSize = 12.sp,
                         fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
                     )
+                }
+            }
+        }
+
+        // v5.1.1: per-SIM selector — rendered only when 2+ SIMs are active
+        if (sims.size > 1) {
+            Spacer(Modifier.height(8.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                sims.forEach { s ->
+                    val selected = selSub == s.subId
+                    GlassChip(
+                        Modifier
+                            .clip(RoundedCornerShape(16.dp))
+                            .clickable { selSub = s.subId }
+                            .padding(2.dp)
+                    ) {
+                        Text(
+                            "SIM${s.slot + 1} · ${s.name}",
+                            color = if (selected) p.accent else p.dim,
+                            fontSize = 12.sp,
+                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+                        )
+                    }
                 }
             }
         }
@@ -272,7 +391,15 @@ fun CellMonitorScreen(nav: Navigator) {
                     val pct = dbm?.let { (((it + 110).toFloat() / 55f) * 100f).coerceIn(0f, 100f) } ?: 0f
                     Box(Modifier.fillMaxWidth().height(150.dp)) {
                         com.netscanner.ui.charts.GaugeArc(
-                            pct, 100f, "SIGNAL", color, Modifier.fillMaxSize()
+                            pct, 100f, "SIGNAL", color, Modifier.fillMaxSize(), unit = "%"
+                        )
+                    }
+                    if (dbm == null) {
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "No live sample yet — tap Start Monitor, or grant Phone + " +
+                                "Location permissions so dBm can be read.",
+                            color = p.dim, fontSize = 12.sp
                         )
                     }
                     Spacer(Modifier.height(10.dp))
@@ -287,6 +414,21 @@ fun CellMonitorScreen(nav: Navigator) {
                         KV("Carrier", operator)
                         KV("Tech", tech)
                         KV("Bars", "$bars / 4")
+                    }
+                    // v5.1.1: at-a-glance per-SIM signal on dual-SIM devices
+                    if (sims.size > 1) {
+                        Spacer(Modifier.height(8.dp))
+                        sims.forEach { s ->
+                            val sdbm = try {
+                                CellService.cellDbm(tm.createForSubscriptionId(s.subId).signalStrength)
+                            } catch (_: Exception) { Int.MAX_VALUE }
+                            val shown =
+                                sdbm.takeIf { it != Int.MAX_VALUE }?.toString() ?: "--"
+                            Text(
+                                "SIM${s.slot + 1} ${s.name} · ${s.carrier.ifBlank { "?" }} · $shown dBm",
+                                color = p.dim, fontSize = 11.sp
+                            )
+                        }
                     }
                 }
                 Spacer(Modifier.height(8.dp))
@@ -339,20 +481,32 @@ fun CellMonitorScreen(nav: Navigator) {
             "Info" -> {
                 LiquidGlassCard(Modifier.fillMaxWidth()) {
                     SectionTitle("Radio & SIM info")
+                    // v5.1.1: list every active SIM when dual-SIM, then the
+                    // detail block for the currently selected one.
+                    if (sims.size > 1) {
+                        sims.forEach { s ->
+                            KV(
+                                "SIM${s.slot + 1} (${s.name})",
+                                s.carrier.ifBlank { "unknown" }
+                            )
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        SectionTitle("Selected SIM")
+                    }
                     KV("Carrier", operator)
                     KV(
                         "Operator code",
-                        try { tm.networkOperator?.ifBlank { "?" } ?: "?" } catch (_: Exception) { "?" }
+                        try { currentTm.networkOperator?.ifBlank { "?" } ?: "?" } catch (_: Exception) { "?" }
                     )
                     KV(
                         "Country",
-                        try { tm.networkCountryIso?.uppercase(Locale.US) ?: "?" } catch (_: Exception) { "?" }
+                        try { currentTm.networkCountryIso?.uppercase(Locale.US) ?: "?" } catch (_: Exception) { "?" }
                     )
                     KV("Radio tech", tech)
                     KV(
                         "Phone type",
                         try {
-                            when (tm.phoneType) {
+                            when (currentTm.phoneType) {
                                 TelephonyManager.PHONE_TYPE_GSM -> "GSM"
                                 TelephonyManager.PHONE_TYPE_CDMA -> "CDMA"
                                 TelephonyManager.PHONE_TYPE_NONE -> "none"
@@ -363,7 +517,7 @@ fun CellMonitorScreen(nav: Navigator) {
                     KV(
                         "SIM state",
                         try {
-                            when (tm.simState) {
+                            when (currentTm.simState) {
                                 TelephonyManager.SIM_STATE_READY -> "Ready"
                                 TelephonyManager.SIM_STATE_ABSENT -> "Absent"
                                 TelephonyManager.SIM_STATE_PIN_REQUIRED,
@@ -374,7 +528,7 @@ fun CellMonitorScreen(nav: Navigator) {
                     )
                     KV(
                         "Roaming",
-                        try { if (tm.isNetworkRoaming) "Yes" else "No" } catch (_: Exception) { "?" }
+                        try { if (currentTm.isNetworkRoaming) "Yes" else "No" } catch (_: Exception) { "?" }
                     )
                 }
                 Spacer(Modifier.height(8.dp))

@@ -45,6 +45,8 @@ import com.netscanner.nav.Route
 import com.netscanner.ui.glass.GlassScreen
 import com.netscanner.ui.glass.LiquidGlassCard
 import com.netscanner.ui.glass.GlassChip
+import com.netscanner.ui.glass.GlassDesc
+import com.netscanner.ui.glass.UseChip
 import com.netscanner.ui.theme.LocalGlassPalette
 import com.netscanner.ui.theme.GlassColors
 
@@ -166,14 +168,8 @@ fun ToolsScreen(nav: Navigator) {
                                         maxLines = 1
                                     )
                                     Text(tile.sub, color = p.dim, fontSize = 11.sp, maxLines = 1)
-                                    Text(
-                                        tile.use,
-                                        color = p.faint,
-                                        fontSize = 10.sp,
-                                        lineHeight = 12.sp,
-                                        maxLines = 2,
-                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                                    )
+                                    Spacer(Modifier.height(6.dp))
+                                    UseChip(tile.use)
                                 }
                             }
                         }
@@ -225,6 +221,11 @@ fun ToolRunScreen(nav: Navigator, id: String) {
 
     GlassScreen(title = def.title, nav = nav) {
         Column(Modifier.fillMaxSize()) {
+            // v5.1.1: show the tool's real-life example on the run screen too
+            ToolsCatalog.tiles.firstOrNull { t -> (t.dest as? Route.Tool)?.id == id }?.let { t ->
+                GlassDesc(t.use)
+                Spacer(Modifier.height(8.dp))
+            }
             if (id == "speed") {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     LiquidGlassCard(Modifier.weight(1f), cornerRadius = 20.dp) {

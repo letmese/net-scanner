@@ -49,6 +49,7 @@ import com.netscanner.nav.Navigator
 import com.netscanner.nav.Route
 import com.netscanner.ui.glass.GlassPill
 import com.netscanner.ui.glass.LiquidGlassCard
+import com.netscanner.ui.glass.UseChip
 import com.netscanner.ui.theme.GlassColors
 import com.netscanner.ui.theme.LocalGlassPalette
 import kotlinx.coroutines.Dispatchers
@@ -207,7 +208,7 @@ fun HomeScreen(nav: Navigator) {
                 Text("⚙", color = p.text, fontSize = 15.sp)
                 Spacer(Modifier.size(6.dp))
                 Text(
-                    "v5.1.0",
+                    "v5.1.1",
                     color = p.accent,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold
@@ -237,7 +238,7 @@ fun HomeScreen(nav: Navigator) {
                         LiquidGlassCard(
                             modifier = Modifier
                                 .weight(1f)
-                                .height(158.dp)
+                                .height(172.dp)
                                 .clickable { nav.push(tile.dest) },
                             cornerRadius = 22.dp
                         ) {

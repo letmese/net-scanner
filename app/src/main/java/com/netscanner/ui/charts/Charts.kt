@@ -141,7 +141,8 @@ fun GaugeArc(
     max: Float,
     label: String,
     color: Color = LocalGlassPalette.current.accent,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    unit: String = "Mbps"
 ) {
     val p = LocalGlassPalette.current
     val frac = if (max <= 0f) 0f else (value / max).coerceIn(0f, 1f)
@@ -173,7 +174,7 @@ fun GaugeArc(
                 if (value.isNaN() || value <= 0f) "--" else String.format("%.1f", value),
                 color = p.text, fontSize = 26.sp, fontWeight = FontWeight.Bold
             )
-            Text("Mbps", color = p.dim, fontSize = 12.sp)
+            Text(unit, color = p.dim, fontSize = 12.sp)
             Spacer(Modifier.height(2.dp))
             Text(label, color = p.dim, fontSize = 12.sp)
         }

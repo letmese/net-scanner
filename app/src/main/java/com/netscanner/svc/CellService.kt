@@ -5,10 +5,12 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.IBinder
 import android.telephony.PhoneStateListener
 import android.telephony.SignalStrength
+import android.telephony.TelephonyCallback
 import android.telephony.TelephonyManager
 import com.netscanner.MainActivity
 import com.netscanner.R
@@ -17,11 +19,21 @@ import com.netscanner.R
  * v5 Cell Monitor foreground service — listens to signal strength changes and
  * keeps a full (expanded) status-bar notification showing dBm, ASU, bars,
  * network tech and carrier. Parity of the legacy CellMonitorService.
+ *
+ * v5.1.1 fix: the legacy PhoneStateListener.listen() path silently stopped
+ * delivering onSignalStrengthsChanged on Android 10/11+ (location / phone
+ * permission enforcement), which left lastDbm at Integer.MAX_VALUE forever —
+ * the direct root cause of the Gauges tab rendering nothing. On API 31+ we
+ * now register a TelephonyManager.SignalStrengthChangedCallback (which
+ * delivers when READ_PHONE_STATE is held); below 31 we fall back to the
+ * legacy listener.
  */
 class CellService : android.app.Service() {
 
     private var tm: TelephonyManager? = null
     private var listener: PhoneStateListener? = null
+    private var cb: TelephonyCallback? = null
+    private var cbTm: TelephonyManager? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -36,22 +48,54 @@ class CellService : android.app.Service() {
         return START_STICKY
     }
 
+    private fun hasPhonePerm(): Boolean =
+        checkSelfPermission(android.Manifest.permission.READ_PHONE_STATE) ==
+            PackageManager.PERMISSION_GRANTED
+
     private fun listen() {
-        if (listener != null) return
-        tm = getSystemService(TELEPHONY_SERVICE) as TelephonyManager
-        listener = object : PhoneStateListener() {
-            override fun onSignalStrengthsChanged(ss: SignalStrength?) {
-                super.onSignalStrengthsChanged(ss)
-                val dbm = cellDbm(ss)
-                lastDbm = dbm
-                lastAsu = try {
-                    SignalStrength::class.java.getMethod("getAsuLevel").invoke(ss) as Int
-                } catch (_: Exception) { -1 }
-                lastBars = barsOf(dbm)
-                if (dbm != Integer.MAX_VALUE) updateNotif()
+        if (listener != null || cb != null) return
+        val mgr = getSystemService(TELEPHONY_SERVICE) as TelephonyManager
+        tm = mgr
+
+        // API 31+: public TelephonyCallback (works when READ_PHONE_STATE is
+        // granted; not subject to the listen() silent-no-op behavior that
+        // broke this service on modern Android).
+        if (Build.VERSION.SDK_INT >= 31 && hasPhonePerm()) {
+            val c = object : TelephonyCallback(), TelephonyCallback.SignalStrengthsListener {
+                override fun onSignalStrengthsChanged(ss: SignalStrength) {
+                    handleSignalStrength(ss)
+                }
+            }
+            try {
+                mgr.registerTelephonyCallback(mainExecutor, c)
+                cb = c
+                cbTm = mgr
+                return
+            } catch (_: Exception) {
+                cb = null
+                cbTm = null
             }
         }
-        try { tm?.listen(listener, PhoneStateListener.LISTEN_SIGNAL_STRENGTHS) } catch (_: Exception) {}
+
+        // Fallback: legacy listener (API < 31, or permission missing at 31+).
+        listener = object : PhoneStateListener() {
+            override fun onSignalStrengthsChanged(ss: SignalStrength?) {
+                handleSignalStrength(ss)
+            }
+        }
+        try {
+            mgr.listen(listener, PhoneStateListener.LISTEN_SIGNAL_STRENGTHS)
+        } catch (_: Exception) {}
+    }
+
+    private fun handleSignalStrength(ss: SignalStrength?) {
+        val dbm = cellDbm(ss)
+        lastDbm = dbm
+        lastAsu = try {
+            SignalStrength::class.java.getMethod("getAsuLevel").invoke(ss) as Int
+        } catch (_: Exception) { -1 }
+        lastBars = barsOf(dbm)
+        if (dbm != Integer.MAX_VALUE) updateNotif()
     }
 
     private fun startAsForeground() {
@@ -99,8 +143,15 @@ class CellService : android.app.Service() {
 
     override fun onDestroy() {
         running = false
+        val c = cb
+        val m = cbTm
+        if (c != null && m != null) {
+            try { m.unregisterTelephonyCallback(c) } catch (_: Exception) {}
+        }
         try { tm?.listen(listener, PhoneStateListener.LISTEN_NONE) } catch (_: Exception) {}
         listener = null
+        cb = null
+        cbTm = null
         super.onDestroy()
     }
 

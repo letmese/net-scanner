@@ -227,3 +227,25 @@ fun GlassChip(
         content = content
     )
 }
+
+/**
+ * Tiny scrim-backed usage-example line for tiles (v5.1.1). The previous
+ * plain p.faint text on raw glass was effectively invisible; this scrim
+ * guarantees contrast in both modes (same mechanism as [GlassDesc]).
+ */
+@Composable
+fun UseChip(text: String, modifier: Modifier = Modifier) {
+    val p = LocalGlassPalette.current
+    Box(
+        modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(p.descScrim)
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+    ) {
+        Text(
+            text, color = p.dim, fontSize = 10.sp, lineHeight = 12.sp,
+            maxLines = 2,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+        )
+    }
+}
