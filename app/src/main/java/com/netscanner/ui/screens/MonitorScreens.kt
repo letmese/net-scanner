@@ -12,16 +12,20 @@ import android.telephony.CellInfoWcdma
 import android.telephony.TelephonyManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -34,6 +38,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -48,6 +56,7 @@ import com.netscanner.ui.charts.LineChart
 import com.netscanner.ui.charts.SignalBars
 import com.netscanner.ui.glass.GlassButton
 import com.netscanner.ui.glass.GlassChip
+import com.netscanner.ui.glass.GlassDesc
 import com.netscanner.ui.glass.GlassScreen
 import com.netscanner.ui.glass.GlassTextField
 import com.netscanner.ui.glass.KV
@@ -58,6 +67,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlin.math.abs
 
 // ─────────────────────────── Ping Monitor ───────────────────────────
@@ -87,6 +99,13 @@ fun CellMonitorScreen(nav: Navigator) {
     val samples = remember { mutableStateListOf<Float>() }
     val neighbors = remember { mutableStateListOf<String>() }
     val csvRows = remember { mutableStateListOf<String>() }
+    // v5.1.0: restored legacy 6-tab layout (Cells / Gauges / Graph / Log / Info / Map)
+    val tabs = listOf("Cells", "Gauges", "Graph", "Log", "Info", "Map")
+    var tab by remember { mutableStateOf("Cells") }
+    val events = remember { mutableStateListOf<String>() }
+    var lastLoggedDbm by remember { mutableStateOf<Int?>(null) }
+    var lastLoggedBars by remember { mutableIntStateOf(-1) }
+    val timeFmt = remember { SimpleDateFormat("HH:mm:ss", Locale.US) }
 
     // 1 s sampling loop — mirrors the legacy rolling 4-minute plot.
     LaunchedEffect(Unit) {
@@ -100,6 +119,26 @@ fun CellMonitorScreen(nav: Navigator) {
                 if (samples.size > 240) samples.removeAt(0)
                 csvRows.add("${System.currentTimeMillis()},$d,${CellService.lastAsu},${CellService.lastBars}")
                 if (csvRows.size > 2000) csvRows.removeAt(0)
+                // Log tab: record every >=3 dB shift or bar change (legacy log tab parity)
+                val lb = CellService.lastBars
+                val prev = lastLoggedDbm
+                if (prev == null || abs(d - prev) >= 3 || lb != lastLoggedBars) {
+                    val dir = when {
+                        prev == null -> "  first"
+                        d > prev -> "  ▲ +${d - prev}"
+                        d < prev -> "  ▼ ${d - prev}"
+                        else -> ""
+                    }
+                    val tag = when {
+                        lb > lastLoggedBars && lastLoggedBars >= 0 -> "  (bars up)"
+                        lb < lastLoggedBars && lastLoggedBars >= 0 -> "  (bars down)"
+                        else -> ""
+                    }
+                    events.add(0, "${timeFmt.format(Date())}  $d dBm  ${CellService.barsStr(lb)}$dir$tag")
+                    if (events.size > 150) events.removeAt(events.size - 1)
+                    lastLoggedDbm = d
+                    lastLoggedBars = lb
+                }
             }
             delay(1000)
         }
@@ -155,6 +194,7 @@ fun CellMonitorScreen(nav: Navigator) {
             ToolEngine.exportCsv(ctx, "cell_log.csv", sb.toString())
         })
     }) {
+        // Control row: start/stop + permission + live badge
         Row(verticalAlignment = Alignment.CenterVertically) {
             GlassButton(
                 if (monitoring) "Stop Monitor" else "Start Monitor",
@@ -179,61 +219,216 @@ fun CellMonitorScreen(nav: Navigator) {
                     permLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
                 })
             }
-        }
-        Spacer(Modifier.height(8.dp))
-
-        LiquidGlassCard(Modifier.fillMaxWidth()) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    dbm?.toString() ?: "--",
-                    color = color, fontSize = 54.sp, fontWeight = FontWeight.Bold
-                )
-                Spacer(Modifier.width(10.dp))
-                Column {
-                    Text("dBm", color = p.dim, fontSize = 13.sp)
-                    Text("ASU ${if (asu >= 0) asu.toString() else "--"}", color = p.dim, fontSize = 13.sp)
-                }
-                Spacer(Modifier.width(14.dp))
-                SignalBars(bars)
-            }
-            Spacer(Modifier.height(10.dp))
-            LineChart(
-                samples.toList(), Modifier.fillMaxWidth(),
-                color = p.accent, label = "Signal (dBm), rolling 4 minutes sampled every second"
-            )
-            Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-                KV("Carrier", operator)
-                KV("Tech", tech)
-                KV("Bars", "$bars / 4")
-            }
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.weight(1f))
             Text(
-                "RSRP  >= -80 Excellent · >= -90 Good · >= -100 Fair · else Poor\n" +
-                    "dBm   >= -85 Excellent · >= -95 Good · >= -105 Fair · else Poor",
-                color = p.faint, fontSize = 12.sp
+                dbm?.let { "$it dBm" } ?: "--",
+                color = color, fontSize = 14.sp, fontWeight = FontWeight.Bold
             )
         }
         Spacer(Modifier.height(8.dp))
 
-        LiquidGlassCard(Modifier.fillMaxWidth()) {
-            SectionTitle("Neighbor cells")
-            if (neighbors.isEmpty()) {
-                Text(
-                    if (granted) "No cells reported yet — keep the screen open for a few seconds."
-                    else "Grant location permission to list surrounding cells.",
-                    color = p.faint, fontSize = 12.sp
-                )
-            } else {
-                neighbors.take(8).forEach { Text(it, color = p.text, fontSize = 12.sp) }
+        // Tab bar — restored legacy 6-tab layout
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            tabs.forEach { t ->
+                val selected = tab == t
+                GlassChip(
+                    Modifier
+                        .clip(RoundedCornerShape(16.dp))
+                        .clickable { tab = t }
+                        .padding(2.dp)
+                ) {
+                    Text(
+                        t, color = if (selected) p.accent else p.dim,
+                        fontSize = 12.sp,
+                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+                    )
+                }
             }
         }
-        Spacer(Modifier.height(8.dp))
-        Text(
-            "Start Monitor keeps a foreground notification with live dBm in the status bar. " +
-                "Neighbor cells need location permission on this Android version.",
-            color = p.faint, fontSize = 12.sp
-        )
+        Spacer(Modifier.height(10.dp))
+
+        when (tab) {
+            "Cells" -> {
+                LiquidGlassCard(Modifier.fillMaxWidth()) {
+                    SectionTitle("Neighbor cells")
+                    if (neighbors.isEmpty()) {
+                        Text(
+                            if (granted) "No cells reported yet — keep the screen open for a few seconds."
+                            else "Grant location permission to list surrounding cells.",
+                            color = p.dim, fontSize = 12.sp
+                        )
+                    } else {
+                        neighbors.forEach { Text(it, color = p.text, fontSize = 12.sp) }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                GlassDesc(
+                    "Each row is a tower the modem can see — serving plus neighbors. " +
+                        "Use it to check whether you are camped on the strongest tower."
+                )
+            }
+            "Gauges" -> {
+                LiquidGlassCard(Modifier.fillMaxWidth()) {
+                    val pct = dbm?.let { (((it + 110).toFloat() / 55f) * 100f).coerceIn(0f, 100f) } ?: 0f
+                    Box(Modifier.fillMaxWidth().height(150.dp)) {
+                        com.netscanner.ui.charts.GaugeArc(
+                            pct, 100f, "SIGNAL", color, Modifier.fillMaxSize()
+                        )
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        SignalBars(bars)
+                        Spacer(Modifier.width(14.dp))
+                        KV("dBm", dbm?.toString() ?: "--")
+                        KV("ASU", if (asu >= 0) asu.toString() else "--")
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                        KV("Carrier", operator)
+                        KV("Tech", tech)
+                        KV("Bars", "$bars / 4")
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                GlassDesc(
+                    "dBm  >= -85 Excellent · >= -95 Good · >= -105 Fair · else Poor. " +
+                        "Compare gauges room-to-room to find dead zones."
+                )
+            }
+            "Graph" -> {
+                LiquidGlassCard(Modifier.fillMaxWidth()) {
+                    LineChart(
+                        samples.toList(), Modifier.fillMaxWidth(),
+                        color = p.accent,
+                        label = "Signal (dBm), rolling 4 minutes sampled every second"
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                GlassDesc(
+                    "One sample per second for the last 4 minutes. Steps or cliffs here " +
+                        "usually mean handovers between towers or new interference."
+                )
+            }
+            "Log" -> {
+                LiquidGlassCard(Modifier.fillMaxWidth().weight(1f)) {
+                    SectionTitle("Signal change log")
+                    if (events.isEmpty()) {
+                        Text(
+                            "Waiting for signal changes — every >=3 dB shift or bar change " +
+                                "is recorded here.",
+                            color = p.dim, fontSize = 12.sp
+                        )
+                    } else {
+                        LazyColumn {
+                            items(events) { e ->
+                                Text(
+                                    e, color = p.text, fontSize = 12.sp,
+                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                    modifier = Modifier.padding(vertical = 3.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                GlassDesc(
+                    "Timestamped history of signal drops — handy for correlating with " +
+                        "the moment calls started failing."
+                )
+            }
+            "Info" -> {
+                LiquidGlassCard(Modifier.fillMaxWidth()) {
+                    SectionTitle("Radio & SIM info")
+                    KV("Carrier", operator)
+                    KV(
+                        "Operator code",
+                        try { tm.networkOperator?.ifBlank { "?" } ?: "?" } catch (_: Exception) { "?" }
+                    )
+                    KV(
+                        "Country",
+                        try { tm.networkCountryIso?.uppercase(Locale.US) ?: "?" } catch (_: Exception) { "?" }
+                    )
+                    KV("Radio tech", tech)
+                    KV(
+                        "Phone type",
+                        try {
+                            when (tm.phoneType) {
+                                TelephonyManager.PHONE_TYPE_GSM -> "GSM"
+                                TelephonyManager.PHONE_TYPE_CDMA -> "CDMA"
+                                TelephonyManager.PHONE_TYPE_NONE -> "none"
+                                else -> "other"
+                            }
+                        } catch (_: Exception) { "?" }
+                    )
+                    KV(
+                        "SIM state",
+                        try {
+                            when (tm.simState) {
+                                TelephonyManager.SIM_STATE_READY -> "Ready"
+                                TelephonyManager.SIM_STATE_ABSENT -> "Absent"
+                                TelephonyManager.SIM_STATE_PIN_REQUIRED,
+                                TelephonyManager.SIM_STATE_PUK_REQUIRED -> "Locked"
+                                else -> "unknown"
+                            }
+                        } catch (_: Exception) { "?" }
+                    )
+                    KV(
+                        "Roaming",
+                        try { if (tm.isNetworkRoaming) "Yes" else "No" } catch (_: Exception) { "?" }
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                GlassDesc(
+                    "Who the phone is attached to right now. 'Roaming: Yes' abroad often " +
+                        "explains why data feels slow or capped."
+                )
+            }
+            "Map" -> {
+                LiquidGlassCard(Modifier.fillMaxWidth()) {
+                    SectionTitle("Tower radar (approximate)")
+                    androidx.compose.foundation.Canvas(
+                        Modifier.fillMaxWidth().height(240.dp)
+                    ) {
+                        val cx = size.width / 2f
+                        val cy = size.height / 2f
+                        val rMax = minOf(cx, cy) * 0.86f
+                        for (i in 1..3) {
+                            drawCircle(
+                                color = Color.White.copy(alpha = 0.14f),
+                                radius = rMax * i / 3f,
+                                center = Offset(cx, cy),
+                                style = Stroke(width = 1.5f)
+                            )
+                        }
+                        drawCircle(
+                            Color(0xFF00FF88), radius = 7f,
+                            center = Offset(cx, cy - rMax * 0.72f)
+                        )
+                        neighbors.forEachIndexed { idx, _ ->
+                            val ang = ((idx + 1) * 47f) % 360f
+                            val rad = Math.toRadians(ang.toDouble())
+                            val rr = rMax * (0.35f + (idx % 3) * 0.18f)
+                            drawCircle(
+                                Color(0xFF38BDF8), radius = 5f,
+                                center = Offset(
+                                    cx + (rr * kotlin.math.cos(rad)).toFloat(),
+                                    cy + (rr * kotlin.math.sin(rad)).toFloat()
+                                )
+                            )
+                        }
+                        drawCircle(Color(0xFF00F5FF), radius = 9f, center = Offset(cx, cy))
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Text("● cyan this phone · ● green serving tower · ● blue neighbors",
+                        color = p.dim, fontSize = 11.sp)
+                }
+                Spacer(Modifier.height(8.dp))
+                GlassDesc(
+                    "Schematic view only — Android hides true tower coordinates, so azimuths " +
+                        "are illustrative. The Cells tab shows the real PCI/EARFCN identifiers."
+                )
+            }
+        }
     }
 }
 
@@ -303,10 +498,10 @@ fun PingMonitorScreen(nav: Navigator) {
             }
         }
         Spacer(Modifier.height(8.dp))
-        Text(
+        GlassDesc(
             "One ping per second (2 s timeout). Watch for spikes on Wi-Fi dropouts " +
-                "or ISP congestion.",
-            color = p.faint, fontSize = 12.sp
+                "or ISP congestion — e.g. keep it running during a video call to see " +
+                "exactly when the frame freezes."
         )
     }
 }
@@ -318,15 +513,17 @@ fun PingMonitorScreen(nav: Navigator) {
 fun MultiPingScreen(nav: Navigator) {
     val p = LocalGlassPalette.current
     val scope = rememberCoroutineScope()
-    data class RowT(val target: String) {
-        val samples = mutableListOf<Float>()
-        var sent: Int = 0
-        var lost: Int = 0
+    // v5.1.0 fix: rows are snapshot-backed so the UI recomposes on each
+    // sample (plain mutable fields never triggered recomposition — the
+    // table stayed frozen at "timeout" even while pings ran).
+    class RowT(val target: String) {
+        val samples = mutableStateListOf<Float>()
+        var sent: Int by mutableStateOf(0)
+        var lost: Int by mutableStateOf(0)
     }
     val rows = remember { mutableStateListOf<RowT>() }
     var input by remember { mutableStateOf("") }
     var running by remember { mutableStateOf(false) }
-    var beat by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(running) {
         if (!running) return@LaunchedEffect
@@ -336,14 +533,11 @@ fun MultiPingScreen(nav: Navigator) {
                     val ms = NetUtils.pingOnce(r.target).takeIf { it >= 0 }
                     r.sent++
                     if (ms == null) r.lost++
-                    synchronized(r.samples) {
-                        r.samples.add(ms?.toFloat() ?: Float.NaN)
-                        if (r.samples.size > 60) r.samples.removeAt(0)
-                    }
+                    r.samples.add(ms?.toFloat() ?: Float.NaN)
+                    if (r.samples.size > 60) r.samples.removeAt(0)
                 }
             }
             delay(1000)
-            beat++
         }
     }
 
@@ -364,7 +558,7 @@ fun MultiPingScreen(nav: Navigator) {
         Spacer(Modifier.height(8.dp))
         LazyColumn(Modifier.weight(1f)) {
             items(rows, key = { it.target }) { r ->
-                val snaps = synchronized(r.samples) { r.samples.toList() }
+                val snaps = r.samples.toList()
                 val valid = snaps.filter { !it.isNaN() }
                 LiquidGlassCard(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -470,10 +664,10 @@ fun NetDiagScreen(nav: Navigator) {
                 }
             }
         }
-        Text(
+        GlassDesc(
             "Suite: interfaces → gateway → WAN → DNS → HTTP → public IP → traceroute. " +
-                "Run it whenever connectivity feels off to isolate the broken layer.",
-            color = p.faint, fontSize = 12.sp
+                "Run it whenever connectivity feels off to isolate the broken layer — " +
+                "before blaming the router or the ISP."
         )
     }
 }

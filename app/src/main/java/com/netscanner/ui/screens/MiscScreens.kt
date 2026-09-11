@@ -48,6 +48,7 @@ import com.netscanner.nav.Navigator
 import com.netscanner.svc.SnifferVpnService
 import com.netscanner.ui.glass.GlassButton
 import com.netscanner.ui.glass.GlassChip
+import com.netscanner.ui.glass.GlassDesc
 import com.netscanner.ui.glass.GlassScreen
 import com.netscanner.ui.glass.GlassTextField
 import com.netscanner.ui.glass.KV
@@ -106,12 +107,12 @@ fun SnifferScreen(nav: Navigator) {
                 fontSize = 18.sp, fontWeight = FontWeight.Bold
             )
             Spacer(Modifier.height(4.dp))
-            Text(
+            GlassDesc(
                 "A local VPN is opened that forwards ONLY DNS traffic (10.111.222.1:53) to a " +
                     "user-space resolver which logs each queried hostname before passing it to the " +
                     "system upstream. Regular traffic is untouched. Android shows a VPN key icon " +
-                    "while active — that is expected.",
-                color = p.faint, fontSize = 12.sp
+                    "while active — that is expected. Use it to see which domains a suspicious " +
+                    "app calls home to."
             )
             if (needGrant) {
                 Spacer(Modifier.height(4.dp))
@@ -179,9 +180,10 @@ fun WolScreen(nav: Navigator) {
         LiquidGlassCard(Modifier.fillMaxWidth()) {
             SectionTitle("Target MAC")
             GlassTextField(mac, { mac = it }, "e.g. AA:BB:CC:DD:EE:FF")
-            Text(
-                "Packet is broadcast to 255.255.255.255:9 on UDP as 6×FF + 16×MAC.",
-                color = p.faint, fontSize = 12.sp
+            GlassDesc(
+                "Packet is broadcast to 255.255.255.255:9 on UDP as 6×FF + 16×MAC. " +
+                    "Grab the MAC from your router's device list and wake the family PC " +
+                    "from bed for a late-night game download."
             )
         }
         Spacer(Modifier.height(8.dp))
@@ -417,9 +419,9 @@ fun LogsScreen(nav: Navigator) {
                 modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
             )
         }
-        Text(
-            "Log lives in memory only; it resets when the app process dies.",
-            color = p.faint, fontSize = 11.sp
+        GlassDesc(
+            "Log lives in memory only; it resets when the app process dies. " +
+                "Attach this log when reporting a bug — it shows the failing step."
         )
     }
 }

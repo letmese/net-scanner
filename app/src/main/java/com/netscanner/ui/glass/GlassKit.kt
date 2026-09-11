@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
@@ -23,6 +24,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.netscanner.ui.theme.LocalGlassPalette
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeTint
@@ -107,8 +109,9 @@ fun Modifier.glassFrost(state: HazeState?): Modifier =
         this
     }
 
-/** Uniform 1px 28%-white border used on all chrome glass. */
-private val chromeBorder = Color.White.copy(alpha = 0.28f)
+/** Chrome hairline border resolved per mode: dark = lower alpha (no halo). */
+@Composable
+fun chromeBorder(): Color = LocalGlassPalette.current.border
 
 /** Floating frosted pill bar for the top bar and bottom action bars. */
 @Composable
@@ -123,11 +126,35 @@ fun GlassPill(
             .clip(RoundedCornerShape(28.dp))
             .glassFrost(hazeState)
             .background(p.pillFill)
-            .border(1.dp, chromeBorder, RoundedCornerShape(28.dp))
+            .border(1.dp, chromeBorder(), RoundedCornerShape(28.dp))
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         content = content
     )
+}
+
+/**
+ * Description text block on a slightly-opaque scrim. Use this for every
+ * explanatory / hint text so body copy never sits directly on raw glass:
+ * the scrim guarantees WCAG 4.5:1 contrast in both modes and content is
+ * never blurred.
+ */
+@Composable
+fun GlassDesc(
+    text: String,
+    modifier: Modifier = Modifier,
+    fontSize: androidx.compose.ui.unit.TextUnit = 12.sp
+) {
+    val p = LocalGlassPalette.current
+    Box(
+        modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(p.descScrim)
+            .border(1.dp, chromeBorder(), RoundedCornerShape(12.dp))
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+    ) {
+        Text(text, color = p.dim, fontSize = fontSize, lineHeight = fontSize * 1.35f)
+    }
 }
 
 /** Production frosted glass card: frost + specular border + layered fill. */
@@ -194,7 +221,7 @@ fun GlassChip(
             .clip(RoundedCornerShape(16.dp))
             .glassFrost(hazeState)
             .background(p.pillFill)
-            .border(1.dp, chromeBorder, RoundedCornerShape(16.dp))
+            .border(1.dp, chromeBorder(), RoundedCornerShape(16.dp))
             .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         content = content

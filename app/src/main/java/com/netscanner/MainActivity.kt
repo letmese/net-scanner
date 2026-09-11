@@ -5,7 +5,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import com.netscanner.core.AppLog
+import com.netscanner.core.Stores
 import com.netscanner.core.ToolEngine
 import com.netscanner.nav.BackHandlerEnabled
 import com.netscanner.nav.Navigator
@@ -25,6 +27,7 @@ import com.netscanner.ui.screens.NetDiagScreen
 import com.netscanner.ui.screens.PingMonitorScreen
 import com.netscanner.ui.screens.PortScanScreen
 import com.netscanner.ui.screens.ScanScreen
+import com.netscanner.ui.screens.SettingsScreen
 import com.netscanner.ui.screens.SignalScreen
 import com.netscanner.ui.screens.SnifferScreen
 import com.netscanner.ui.screens.SpeedHistoryScreen
@@ -35,9 +38,10 @@ import com.netscanner.ui.screens.UsageScreen
 import com.netscanner.ui.screens.WifiAnalyzerScreen
 import com.netscanner.ui.screens.WolScreen
 import com.netscanner.ui.theme.GlassTheme
+import com.netscanner.ui.theme.ThemeMode
 
 /**
- * NetScanner v5.0.0 — pure Kotlin + Jetpack Compose (Material 3).
+ * NetScanner v5.1.0 — pure Kotlin + Jetpack Compose (Material 3).
  * Single activity; every screen is a Compose route. No XML UI besides the
  * manifest and launcher icon resources.
  */
@@ -47,8 +51,11 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         ToolEngine.appCtx = applicationContext
         setContent {
-            GlassTheme {
-                val nav = Navigator()
+            val nav = remember {
+                Navigator().apply { themeMode = Stores.themeMode(applicationContext) }
+            }
+            // Light / Dark / System, persisted in Settings ("netscanner" prefs)
+            GlassTheme(mode = nav.themeMode) {
                 nav.BackHandlerEnabled()
                 GlassBackdrop {
                     when (val route = nav.current) {
@@ -76,6 +83,7 @@ class MainActivity : ComponentActivity() {
                         Route.History -> HistoryScreen(nav)
                         Route.Logs -> LogsScreen(nav)
                         Route.Health -> HealthScreen(nav)
+                        Route.Settings -> SettingsScreen(nav)
                     }
                 }
             }

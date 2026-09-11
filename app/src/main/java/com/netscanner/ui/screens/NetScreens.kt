@@ -41,6 +41,7 @@ import com.netscanner.nav.Navigator
 import com.netscanner.ui.charts.BarsChart
 import com.netscanner.ui.charts.SignalBars
 import com.netscanner.ui.glass.GlassChip
+import com.netscanner.ui.glass.GlassDesc
 import com.netscanner.ui.glass.GlassScreen
 import com.netscanner.ui.glass.GlassTextField
 import com.netscanner.ui.glass.KV
@@ -99,9 +100,9 @@ fun SignalScreen(nav: Navigator) {
             KV("Frequency", freq)
         }
         Spacer(Modifier.height(10.dp))
-        Text(
-            "Walk around the house and watch the meter — the reading refreshes every second.",
-            color = p.faint, fontSize = 12.sp
+        GlassDesc(
+            "Walk around the house and watch the meter — the reading refreshes every " +
+                "second. Find the spot where your Wi-Fi drops below 3 bars."
         )
     }
 }
@@ -146,10 +147,10 @@ fun WifiAnalyzerScreen(nav: Navigator) {
             GlassChip { Text("${aps.size} APs", color = p.dim, fontSize = 12.sp) }
         }) {
             LiquidGlassCard(Modifier.fillMaxWidth()) {
-                Text(
+                GlassDesc(
                     "APs refresh every 3 s. Location permission + location services " +
-                        "must be ON for Android to return scan results.",
-                    color = p.faint, fontSize = 12.sp
+                        "must be ON for Android to return scan results. Look for a quiet " +
+                        "channel before buying a mesh node or switching your router."
                 )
             }
             Spacer(Modifier.height(8.dp))
@@ -348,6 +349,36 @@ private fun parseProcFile(path: String, proto: String, out: MutableList<Conn>) {
     } catch (_: Exception) {}
 }
 
+// v5.1.0 fix: Android 10+ SELinux often hides /proc/net entries, leaving the
+// table empty. Fall back to the toybox `netstat` binary which returns the
+// same socket table for our own UID.
+private fun parseNetstat(out: MutableList<Conn>) {
+    try {
+        val proc = Runtime.getRuntime().exec(arrayOf("/system/bin/netstat", "-tun"))
+        val text = proc.inputStream.bufferedReader().use { it.readText() }
+        proc.waitFor()
+        val lines = text.lines()
+        for (i in 1 until lines.size) {
+            val cols = lines[i].trim().split(Regex("\\s+"))
+            if (cols.size < 5) continue
+            val proto = cols[0].uppercase(Locale.US)
+            if (proto != "TCP" && proto != "UDP") continue
+            val local = cols[3]
+            val remote = cols[4]
+            val state = if (proto == "UDP") "-" else cols.getOrElse(5) { "-" }
+            out.add(Conn(proto, local, remote, state, "uid:0"))
+        }
+    } catch (_: Exception) {}
+}
+
+private fun collectConns(out: MutableList<Conn>) {
+    parseProcFile("/proc/net/tcp", "TCP", out)
+    parseProcFile("/proc/net/tcp6", "TCP6", out)
+    parseProcFile("/proc/net/udp", "UDP", out)
+    parseProcFile("/proc/net/udp6", "UDP6", out)
+    if (out.isEmpty()) parseNetstat(out)
+}
+
 /** Legacy ConnectionsActivity: live TCP/UDP table with app mapping. */
 @Composable
 fun ConnectionsScreen(nav: Navigator) {
@@ -360,10 +391,7 @@ fun ConnectionsScreen(nav: Navigator) {
     LaunchedEffect(refreshTick) {
         while (true) {
             val list = mutableListOf<Conn>()
-            parseProcFile("/proc/net/tcp", "TCP", list)
-            parseProcFile("/proc/net/tcp6", "TCP6", list)
-            parseProcFile("/proc/net/udp", "UDP", list)
-            parseProcFile("/proc/net/udp6", "UDP6", list)
+            collectConns(list)
             // map uid → app label
             val uidCache = HashMap<String, String>()
             conns = list.map { c ->
@@ -387,6 +415,11 @@ fun ConnectionsScreen(nav: Navigator) {
     GlassScreen("Connections", nav, actions = {
         GlassChip(Modifier.clickable { refreshTick++ }) { Text("Refresh", color = p.accent, fontSize = 12.sp) }
     }) {
+        GlassDesc(
+            "Live socket table for apps on this phone. Open your mail app, come back, " +
+                "and watch its connections appear — great for spotting chatty apps."
+        )
+        Spacer(Modifier.height(8.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             listOf("all", "TCP", "UDP").forEach { f ->
                 GlassChip(
@@ -452,10 +485,7 @@ fun LocalPortsScreen(nav: Navigator) {
     LaunchedEffect(Unit) {
         while (true) {
             val list = mutableListOf<Conn>()
-            parseProcFile("/proc/net/tcp", "TCP", list)
-            parseProcFile("/proc/net/tcp6", "TCP6", list)
-            parseProcFile("/proc/net/udp", "UDP", list)
-            parseProcFile("/proc/net/udp6", "UDP6", list)
+            collectConns(list)
             rows = list.filter { it.state == "LISTEN" || (it.proto.startsWith("UDP") && it.remote.endsWith(":0") && it.state == "—") }
                 .distinctBy { it.proto + it.local }
                 .map {
@@ -474,13 +504,10 @@ fun LocalPortsScreen(nav: Navigator) {
         }
     }
     GlassScreen("Local Ports", nav) {
-        LiquidGlassCard(Modifier.fillMaxWidth()) {
-            Text(
-                "Sockets listening on this device. Anything unexpected may be a debug " +
-                    "or hidden service worth checking.",
-                color = p.faint, fontSize = 12.sp
-            )
-        }
+        GlassDesc(
+            "Sockets listening on this device. Anything unexpected may be a debug " +
+                "or hidden service worth checking — e.g. port 5555 (adb) left open is a red flag."
+        )
         Spacer(Modifier.height(8.dp))
         LazyColumn(Modifier.weight(1f)) {
             items(rows) { r ->

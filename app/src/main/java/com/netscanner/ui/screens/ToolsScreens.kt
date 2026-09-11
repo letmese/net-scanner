@@ -49,34 +49,37 @@ import com.netscanner.ui.theme.LocalGlassPalette
 import com.netscanner.ui.theme.GlassColors
 
 /** 24-tile catalog — exact port of legacy ToolsActivity grid. */
-data class ToolTile(val emoji: String, val title: String, val sub: String, val dest: Route)
+data class ToolTile(
+    val emoji: String, val title: String, val sub: String,
+    val use: String, val dest: Route
+)
 
 object ToolsCatalog {
     val tiles = listOf(
-        ToolTile("🩺", "Health Score", "Grade your connection", Route.Health),
-        ToolTile("⚡", "Speed Test", "Download / upload", Route.Tool("speed")),
-        ToolTile("📈", "Ping Monitor", "Latency graph & jitter", Route.PingMonitor),
-        ToolTile("📊", "Connection Monitor", "Live per-app traffic", Route.Connections),
-        ToolTile("📶", "Wi-Fi Analyzer", "Channels & signal", Route.WifiAnalyzer),
-        ToolTile("📡", "Signal Meter", "Live RSSI strength", Route.Signal),
-        ToolTile("🌐", "Net Diag", "Ping · trace · SSDP", Route.NetDiag),
-        ToolTile("🔌", "My Ports", "Listening ports", Route.LocalPorts),
-        ToolTile("🕵️", "DNS Sniffer", "See app DNS queries (VPN)", Route.Sniffer),
-        ToolTile("🖥", "SSH Client", "Log into routers", Route.Ssh),
-        ToolTile("🧪", "Raw Probe", "Custom TCP/UDP payloads", Route.Tool("probe")),
-        ToolTile("🔎", "Whois / Intel", "RDAP ownership data", Route.Tool("whois")),
-        ToolTile("🌍", "External Ports", "Internet-side scan", Route.Tool("extport")),
-        ToolTile("📡", "mDNS Discovery", "Cast, AirPlay, printers", Route.Tool("mdns")),
-        ToolTile("🏷", "SNMP Probe", "Device name & model", Route.Tool("snmp")),
-        ToolTile("🔒", "TLS Inspector", "Certificate details", Route.Tool("cert")),
-        ToolTile("🛡", "HTTP Audit", "Security headers grade", Route.Tool("secaudit")),
-        ToolTile("🌐", "DNS Toolkit", "Lookups + resolver speed", Route.Tool("dns")),
-        ToolTile("🌍", "Public IP", "IP, ISP, gateway info", Route.Tool("netinfo")),
-        ToolTile("🧮", "Subnet Calc", "CIDR → ranges", Route.Tool("subnet")),
-        ToolTile("📈", "Speed History", "Past results + chart", Route.SpeedHistory),
-        ToolTile("📊", "Data Usage", "Per-app daily usage", Route.Usage),
-        ToolTile("🐺", "Wake-on-LAN", "Saved wake profiles", Route.Wol),
-        ToolTile("📋", "Logs", "Crash & event diagnostics", Route.Logs)
+        ToolTile("🩺", "Health Score", "Grade your connection", "e.g. find out if call lag is Wi-Fi or ISP", Route.Health),
+        ToolTile("⚡", "Speed Test", "Download / upload", "e.g. verify the new router is really faster", Route.Tool("speed")),
+        ToolTile("📈", "Ping Monitor", "Latency graph & jitter", "e.g. watch jitter spike as a call freezes", Route.PingMonitor),
+        ToolTile("📊", "Connection Monitor", "Live per-app traffic", "e.g. see which app eats your data", Route.Connections),
+        ToolTile("📶", "Wi-Fi Analyzer", "Channels & signal", "e.g. pick a quiet channel for your AP", Route.WifiAnalyzer),
+        ToolTile("📡", "Signal Meter", "Live RSSI strength", "e.g. walk each room to find dead zones", Route.Signal),
+        ToolTile("🌐", "Net Diag", "Ping · trace · SSDP", "e.g. find the exact hop that fails", Route.NetDiag),
+        ToolTile("🔌", "My Ports", "Listening ports", "e.g. spot adb :5555 left open", Route.LocalPorts),
+        ToolTile("🕵️", "DNS Sniffer", "See app DNS queries (VPN)", "e.g. catch a tracker phoning home", Route.Sniffer),
+        ToolTile("🖥", "SSH Client", "Log into routers", "e.g. reboot OpenWrt from the couch", Route.Ssh),
+        ToolTile("🧪", "Raw Probe", "Custom TCP/UDP payloads", "e.g. test a port after a firewall change", Route.Tool("probe")),
+        ToolTile("🔎", "Whois / Intel", "RDAP ownership data", "e.g. ID the owner of a suspicious IP", Route.Tool("whois")),
+        ToolTile("🌍", "External Ports", "Internet-side scan", "e.g. confirm WAN ports are closed", Route.Tool("extport")),
+        ToolTile("📡", "mDNS Discovery", "Cast, AirPlay, printers", "e.g. find the Chromecast's IP", Route.Tool("mdns")),
+        ToolTile("🏷", "SNMP Probe", "Device name & model", "e.g. ID the mystery box at .1.23", Route.Tool("snmp")),
+        ToolTile("🔒", "TLS Inspector", "Certificate details", "e.g. spot an expired NAS cert", Route.Tool("cert")),
+        ToolTile("🛡", "HTTP Audit", "Security headers grade", "e.g. score your self-hosted page", Route.Tool("secaudit")),
+        ToolTile("🌐", "DNS Toolkit", "Lookups + resolver speed", "e.g. debug why a domain won't resolve", Route.Tool("dns")),
+        ToolTile("🌍", "Public IP", "IP, ISP, gateway info", "e.g. confirm your VPN changed the IP", Route.Tool("netinfo")),
+        ToolTile("🧮", "Subnet Calc", "CIDR → ranges", "e.g. split /24 into guest + IoT VLANs", Route.Tool("subnet")),
+        ToolTile("📈", "Speed History", "Past results + chart", "e.g. show ISP a week of slow evenings", Route.SpeedHistory),
+        ToolTile("📊", "Data Usage", "Per-app daily usage", "e.g. find the app burning your plan", Route.Usage),
+        ToolTile("🐺", "Wake-on-LAN", "Saved wake profiles", "e.g. wake the NAS before backup", Route.Wol),
+        ToolTile("📋", "Logs", "Crash & event diagnostics", "e.g. attach it when reporting a bug", Route.Logs)
     )
 
     data class ToolDef(
@@ -147,14 +150,14 @@ fun ToolsScreen(nav: Navigator) {
                         LiquidGlassCard(
                             modifier = Modifier
                                 .weight(1f)
-                                .aspectRatio(1.45f)
+                                .aspectRatio(1.1f)
                                 .clickable { nav.push(tile.dest) },
                             cornerRadius = 20.dp
                         ) {
                             Box(Modifier.fillMaxSize()) {
                                 Column(Modifier.align(Alignment.TopStart)) {
-                                    Text(tile.emoji, fontSize = 24.sp)
-                                    Spacer(Modifier.height(6.dp))
+                                    Text(tile.emoji, fontSize = 20.sp)
+                                    Spacer(Modifier.height(4.dp))
                                     Text(
                                         tile.title,
                                         color = p.text,
@@ -162,7 +165,15 @@ fun ToolsScreen(nav: Navigator) {
                                         fontWeight = FontWeight.SemiBold,
                                         maxLines = 1
                                     )
-                                    Text(tile.sub, color = p.dim, fontSize = 11.sp, maxLines = 2)
+                                    Text(tile.sub, color = p.dim, fontSize = 11.sp, maxLines = 1)
+                                    Text(
+                                        tile.use,
+                                        color = p.faint,
+                                        fontSize = 10.sp,
+                                        lineHeight = 12.sp,
+                                        maxLines = 2,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                    )
                                 }
                             }
                         }

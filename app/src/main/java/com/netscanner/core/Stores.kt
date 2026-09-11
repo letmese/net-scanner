@@ -1,6 +1,7 @@
 package com.netscanner.core
 
 import android.content.Context
+import com.netscanner.ui.theme.ThemeMode
 import org.json.JSONArray
 import org.json.JSONObject
 import java.text.SimpleDateFormat
@@ -145,5 +146,17 @@ object Stores {
 
     fun setNightSpeed(ctx: Context, on: Boolean) {
         prefs(ctx).edit().putBoolean("night_speed", on).apply()
+    }
+
+    // ---- Appearance (Light / Dark / System) — persisted in Settings ----
+    fun themeMode(ctx: Context): ThemeMode =
+        try {
+            ThemeMode.valueOf(prefs(ctx).getString("theme_mode", null) ?: ThemeMode.SYSTEM.name)
+        } catch (ignored: Exception) {
+            ThemeMode.SYSTEM
+        }
+
+    fun setThemeMode(ctx: Context, mode: ThemeMode) {
+        prefs(ctx).edit().putString("theme_mode", mode.name).apply()
     }
 }

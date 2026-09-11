@@ -34,6 +34,7 @@ import com.netscanner.svc.AutoSpeedService
 import com.netscanner.ui.charts.DualLineChart
 import com.netscanner.ui.glass.GlassButton
 import com.netscanner.ui.glass.GlassChip
+import com.netscanner.ui.glass.GlassDesc
 import com.netscanner.ui.glass.GlassScreen
 import com.netscanner.ui.glass.KV
 import com.netscanner.ui.glass.LiquidGlassCard
@@ -284,11 +285,11 @@ fun DnsTesterScreen(nav: Navigator) {
         GlassButton("Re-probe", { probe() }, enabled = !testing, accent = true)
     }) {
         LiquidGlassCard(Modifier.fillMaxWidth()) {
-            Text(
+            GlassDesc(
                 "Probes ${servers.size} public resolvers and ranks by DNS resolution " +
                     "latency. Tap a row to reveal the adb command that sets it as " +
-                    "Android Private DNS.",
-                color = p.faint, fontSize = 12.sp
+                    "Android Private DNS — the first step when web pages load slowly " +
+                    "but streaming works fine."
             )
             if (note.isNotEmpty()) {
                 Spacer(Modifier.height(4.dp))

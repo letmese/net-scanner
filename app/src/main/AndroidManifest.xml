@@ -33,7 +33,7 @@
         </activity>
 
         <service
-            android:name=".services.SnifferVpnService"
+            android:name=".svc.SnifferVpnService"
             android:permission="android.permission.BIND_VPN_SERVICE"
             android:exported="false"
             android:foregroundServiceType="specialUse">
@@ -46,7 +46,7 @@
         </service>
 
         <service
-            android:name=".services.CellMonitorService"
+            android:name=".svc.CellService"
             android:exported="false"
             android:foregroundServiceType="specialUse">
             <property

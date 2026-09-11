@@ -1,0 +1,94 @@
+WARNING: We recommend using a newer Android Gradle plugin to use compileSdk = 35
+
+This Android Gradle plugin (8.5.2) was tested up to compileSdk = 34.
+
+You are strongly encouraged to update your project to use a newer
+Android Gradle plugin that has been tested with compileSdk = 35.
+
+If you are already using the latest version of the Android Gradle plugin,
+you may need to wait until a newer version with support for compileSdk = 35 is available.
+
+For more information refer to the compatibility table:
+https://d.android.com/r/tools/api-level-support
+
+To suppress this warning, add/update
+    android.suppressUnsupportedCompileSdk=35
+to this project's gradle.properties.
+> Task :app:preBuild UP-TO-DATE
+> Task :app:preDebugBuild UP-TO-DATE
+> Task :app:mergeDebugNativeDebugMetadata NO-SOURCE
+> Task :app:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :app:checkDebugAarMetadata UP-TO-DATE
+> Task :app:generateDebugResValues UP-TO-DATE
+> Task :app:mapDebugSourceSetPaths UP-TO-DATE
+> Task :app:generateDebugResources UP-TO-DATE
+> Task :app:mergeDebugResources UP-TO-DATE
+> Task :app:packageDebugResources UP-TO-DATE
+> Task :app:parseDebugLocalResources UP-TO-DATE
+> Task :app:createDebugCompatibleScreenManifests UP-TO-DATE
+> Task :app:extractDeepLinksDebug UP-TO-DATE
+> Task :app:processDebugMainManifest UP-TO-DATE
+> Task :app:processDebugManifest UP-TO-DATE
+> Task :app:processDebugManifestForPackage UP-TO-DATE
+> Task :app:processDebugResources UP-TO-DATE
+> Task :app:javaPreCompileDebug UP-TO-DATE
+> Task :app:mergeDebugShaders UP-TO-DATE
+> Task :app:compileDebugShaders NO-SOURCE
+> Task :app:generateDebugAssets UP-TO-DATE
+> Task :app:mergeDebugAssets UP-TO-DATE
+> Task :app:compressDebugAssets UP-TO-DATE
+> Task :app:desugarDebugFileDependencies UP-TO-DATE
+> Task :app:checkDebugDuplicateClasses UP-TO-DATE
+> Task :app:mergeDebugStartupProfile UP-TO-DATE
+> Task :app:mergeExtDexDebug UP-TO-DATE
+> Task :app:mergeLibDexDebug UP-TO-DATE
+> Task :app:mergeDebugJniLibFolders UP-TO-DATE
+> Task :app:mergeDebugNativeLibs UP-TO-DATE
+> Task :app:stripDebugDebugSymbols UP-TO-DATE
+> Task :app:validateSigningDebug UP-TO-DATE
+> Task :app:writeDebugAppMetadata UP-TO-DATE
+> Task :app:writeDebugSigningConfigVersions UP-TO-DATE
+> Task :app:compileDebugKotlin
+w: file:///C:/Users/xbxga/AppData/Roaming/Tencent/Marvis/User/oAN1i2YUvCbWP_4W7LanZr7Qb3zA/workspace/conv_5f9f6edbec66426f9dc432322748d0df/temp/net-scanner-v5/app/src/main/java/com/netscanner/core/Mdns.kt:57:17 'fun resolveService(p0: NsdServiceInfo!, p1: NsdManager.ResolveListener!): Unit' is deprecated. Deprecated in Java.
+w: file:///C:/Users/xbxga/AppData/Roaming/Tencent/Marvis/User/oAN1i2YUvCbWP_4W7LanZr7Qb3zA/workspace/conv_5f9f6edbec66426f9dc432322748d0df/temp/net-scanner-v5/app/src/main/java/com/netscanner/core/Mdns.kt:65:27 'var host: InetAddress!' is deprecated. Deprecated in Java.
+w: file:///C:/Users/xbxga/AppData/Roaming/Tencent/Marvis/User/oAN1i2YUvCbWP_4W7LanZr7Qb3zA/workspace/conv_5f9f6edbec66426f9dc432322748d0df/temp/net-scanner-v5/app/src/main/java/com/netscanner/core/ToolEngine.kt:94:21 'fun resolveService(p0: NsdServiceInfo!, p1: NsdManager.ResolveListener!): Unit' is deprecated. Deprecated in Java.
+w: file:///C:/Users/xbxga/AppData/Roaming/Tencent/Marvis/User/oAN1i2YUvCbWP_4W7LanZr7Qb3zA/workspace/conv_5f9f6edbec66426f9dc432322748d0df/temp/net-scanner-v5/app/src/main/java/com/netscanner/core/ToolEngine.kt:97:38 'var host: InetAddress!' is deprecated. Deprecated in Java.
+w: file:///C:/Users/xbxga/AppData/Roaming/Tencent/Marvis/User/oAN1i2YUvCbWP_4W7LanZr7Qb3zA/workspace/conv_5f9f6edbec66426f9dc432322748d0df/temp/net-scanner-v5/app/src/main/java/com/netscanner/core/ToolEngine.kt:423:38 'val dhcpInfo: DhcpInfo!' is deprecated. Deprecated in Java.
+w: file:///C:/Users/xbxga/AppData/Roaming/Tencent/Marvis/User/oAN1i2YUvCbWP_4W7LanZr7Qb3zA/workspace/conv_5f9f6edbec66426f9dc432322748d0df/temp/net-scanner-v5/app/src/main/java/com/netscanner/svc/AutoSpeedService.kt:79:64 'constructor(p0: Context!): Notification.Builder' is deprecated. Deprecated in Java.
+w: file:///C:/Users/xbxga/AppData/Roaming/Tencent/Marvis/User/oAN1i2YUvCbWP_4W7LanZr7Qb3zA/workspace/conv_5f9f6edbec66426f9dc432322748d0df/temp/net-scanner-v5/app/src/main/java/com/netscanner/svc/CellService.kt:10:8 'class PhoneStateListener : Any' is deprecated. Deprecated in Java.
+w: file:///C:/Users/xbxga/AppData/Roaming/Tencent/Marvis/User/oAN1i2YUvCbWP_4W7LanZr7Qb3zA/workspace/conv_5f9f6edbec66426f9dc432322748d0df/temp/net-scanner-v5/app/src/main/java/com/netscanner/svc/CellService.kt:24:27 'class PhoneStateListener : Any' is deprecated. Deprecated in Java.
+w: file:///C:/Users/xbxga/AppData/Roaming/Tencent/Marvis/User/oAN1i2YUvCbWP_4W7LanZr7Qb3zA/workspace/conv_5f9f6edbec66426f9dc432322748d0df/temp/net-scanner-v5/app/src/main/java/com/netscanner/svc/CellService.kt:42:29 'class PhoneStateListener : Any' is deprecated. Deprecated in Java.
+w: file:///C:/Users/xbxga/AppData/Roaming/Tencent/Marvis/User/oAN1i2YUvCbWP_4W7LanZr7Qb3zA/workspace/conv_5f9f6edbec66426f9dc432322748d0df/temp/net-scanner-v5/app/src/main/java/com/netscanner/svc/CellService.kt:42:29 'constructor(): PhoneStateListener' is deprecated. Deprecated in Java.
+w: file:///C:/Users/xbxga/AppData/Roaming/Tencent/Marvis/User/oAN1i2YUvCbWP_4W7LanZr7Qb3zA/workspace/conv_5f9f6edbec66426f9dc432322748d0df/temp/net-scanner-v5/app/src/main/java/com/netscanner/svc/CellService.kt:44:23 'fun onSignalStrengthsChanged(p0: SignalStrength!): Unit' is deprecated. Deprecated in Java.
+w: file:///C:/Users/xbxga/AppData/Roaming/Tencent/Marvis/User/oAN1i2YUvCbWP_4W7LanZr7Qb3zA/workspace/conv_5f9f6edbec66426f9dc432322748d0df/temp/net-scanner-v5/app/src/main/java/com/netscanner/svc/CellService.kt:54:19 'fun listen(p0: PhoneStateListener!, p1: Int): Unit' is deprecated. Deprecated in Java.
+w: file:///C:/Users/xbxga/AppData/Roaming/Tencent/Marvis/User/oAN1i2YUvCbWP_4W7LanZr7Qb3zA/workspace/conv_5f9f6edbec66426f9dc432322748d0df/temp/net-scanner-v5/app/src/main/java/com/netscanner/svc/CellService.kt:54:36 'class PhoneStateListener : Any' is deprecated. Deprecated in Java.
+w: file:///C:/Users/xbxga/AppData/Roaming/Tencent/Marvis/User/oAN1i2YUvCbWP_4W7LanZr7Qb3zA/workspace/conv_5f9f6edbec66426f9dc432322748d0df/temp/net-scanner-v5/app/src/main/java/com/netscanner/svc/CellService.kt:54:55 'static field LISTEN_SIGNAL_STRENGTHS: Int' is deprecated. Deprecated in Java.
+w: file:///C:/Users/xbxga/AppData/Roaming/Tencent/Marvis/User/oAN1i2YUvCbWP_4W7LanZr7Qb3zA/workspace/conv_5f9f6edbec66426f9dc432322748d0df/temp/net-scanner-v5/app/src/main/java/com/netscanner/svc/CellService.kt:67:64 'constructor(p0: Context!): Notification.Builder' is deprecated. Deprecated in Java.
+w: file:///C:/Users/xbxga/AppData/Roaming/Tencent/Marvis/User/oAN1i2YUvCbWP_4W7LanZr7Qb3zA/workspace/conv_5f9f6edbec66426f9dc432322748d0df/temp/net-scanner-v5/app/src/main/java/com/netscanner/svc/CellService.kt:86:64 'constructor(p0: Context!): Notification.Builder' is deprecated. Deprecated in Java.
+w: file:///C:/Users/xbxga/AppData/Roaming/Tencent/Marvis/User/oAN1i2YUvCbWP_4W7LanZr7Qb3zA/workspace/conv_5f9f6edbec66426f9dc432322748d0df/temp/net-scanner-v5/app/src/main/java/com/netscanner/svc/CellService.kt:102:19 'fun listen(p0: PhoneStateListener!, p1: Int): Unit' is deprecated. Deprecated in Java.
+w: file:///C:/Users/xbxga/AppData/Roaming/Tencent/Marvis/User/oAN1i2YUvCbWP_4W7LanZr7Qb3zA/workspace/conv_5f9f6edbec66426f9dc432322748d0df/temp/net-scanner-v5/app/src/main/java/com/netscanner/svc/CellService.kt:102:36 'class PhoneStateListener : Any' is deprecated. Deprecated in Java.
+w: file:///C:/Users/xbxga/AppData/Roaming/Tencent/Marvis/User/oAN1i2YUvCbWP_4W7LanZr7Qb3zA/workspace/conv_5f9f6edbec66426f9dc432322748d0df/temp/net-scanner-v5/app/src/main/java/com/netscanner/svc/CellService.kt:102:55 'static field LISTEN_NONE: Int' is deprecated. Deprecated in Java.
+w: file:///C:/Users/xbxga/AppData/Roaming/Tencent/Marvis/User/oAN1i2YUvCbWP_4W7LanZr7Qb3zA/workspace/conv_5f9f6edbec66426f9dc432322748d0df/temp/net-scanner-v5/app/src/main/java/com/netscanner/svc/CellService.kt:127:32 'val gsmSignalStrength: Int' is deprecated. Deprecated in Java.
+w: file:///C:/Users/xbxga/AppData/Roaming/Tencent/Marvis/User/oAN1i2YUvCbWP_4W7LanZr7Qb3zA/workspace/conv_5f9f6edbec66426f9dc432322748d0df/temp/net-scanner-v5/app/src/main/java/com/netscanner/svc/CellService.kt:129:33 'val cdmaDbm: Int' is deprecated. Deprecated in Java.
+w: file:///C:/Users/xbxga/AppData/Roaming/Tencent/Marvis/User/oAN1i2YUvCbWP_4W7LanZr7Qb3zA/workspace/conv_5f9f6edbec66426f9dc432322748d0df/temp/net-scanner-v5/app/src/main/java/com/netscanner/svc/CellService.kt:129:49 'val cdmaDbm: Int' is deprecated. Deprecated in Java.
+w: file:///C:/Users/xbxga/AppData/Roaming/Tencent/Marvis/User/oAN1i2YUvCbWP_4W7LanZr7Qb3zA/workspace/conv_5f9f6edbec66426f9dc432322748d0df/temp/net-scanner-v5/app/src/main/java/com/netscanner/svc/CellService.kt:130:29 'val evdoDbm: Int' is deprecated. Deprecated in Java.
+w: file:///C:/Users/xbxga/AppData/Roaming/Tencent/Marvis/User/oAN1i2YUvCbWP_4W7LanZr7Qb3zA/workspace/conv_5f9f6edbec66426f9dc432322748d0df/temp/net-scanner-v5/app/src/main/java/com/netscanner/svc/CellService.kt:150:30 'static field NETWORK_TYPE_IDEN: Int' is deprecated. Deprecated in Java.
+w: file:///C:/Users/xbxga/AppData/Roaming/Tencent/Marvis/User/oAN1i2YUvCbWP_4W7LanZr7Qb3zA/workspace/conv_5f9f6edbec66426f9dc432322748d0df/temp/net-scanner-v5/app/src/main/java/com/netscanner/svc/SnifferVpn.kt:60:64 'constructor(p0: Context!): Notification.Builder' is deprecated. Deprecated in Java.
+w: file:///C:/Users/xbxga/AppData/Roaming/Tencent/Marvis/User/oAN1i2YUvCbWP_4W7LanZr7Qb3zA/workspace/conv_5f9f6edbec66426f9dc432322748d0df/temp/net-scanner-v5/app/src/main/java/com/netscanner/ui/screens/HomeScreen.kt:147:22 'val connectionInfo: WifiInfo!' is deprecated. Deprecated in Java.
+w: file:///C:/Users/xbxga/AppData/Roaming/Tencent/Marvis/User/oAN1i2YUvCbWP_4W7LanZr7Qb3zA/workspace/conv_5f9f6edbec66426f9dc432322748d0df/temp/net-scanner-v5/app/src/main/java/com/netscanner/ui/screens/MiscScreens.kt:406:21 'val LocalClipboardManager: ProvidableCompositionLocal<ClipboardManager>' is deprecated. Use LocalClipboard instead which supports suspend functions.
+w: file:///C:/Users/xbxga/AppData/Roaming/Tencent/Marvis/User/oAN1i2YUvCbWP_4W7LanZr7Qb3zA/workspace/conv_5f9f6edbec66426f9dc432322748d0df/temp/net-scanner-v5/app/src/main/java/com/netscanner/ui/screens/MonitorScreens.kt:712:36 'val connectionInfo: WifiInfo!' is deprecated. Deprecated in Java.
+w: file:///C:/Users/xbxga/AppData/Roaming/Tencent/Marvis/User/oAN1i2YUvCbWP_4W7LanZr7Qb3zA/workspace/conv_5f9f6edbec66426f9dc432322748d0df/temp/net-scanner-v5/app/src/main/java/com/netscanner/ui/screens/NetScreens.kt:72:29 'val connectionInfo: WifiInfo!' is deprecated. Deprecated in Java.
+w: file:///C:/Users/xbxga/AppData/Roaming/Tencent/Marvis/User/oAN1i2YUvCbWP_4W7LanZr7Qb3zA/workspace/conv_5f9f6edbec66426f9dc432322748d0df/temp/net-scanner-v5/app/src/main/java/com/netscanner/ui/screens/NetScreens.kt:137:27 'field SSID: String!' is deprecated. Deprecated in Java.
+
+> Task :app:compileDebugJavaWithJavac NO-SOURCE
+> Task :app:dexBuilderDebug
+> Task :app:mergeDebugGlobalSynthetics FROM-CACHE
+> Task :app:processDebugJavaRes
+> Task :app:mergeProjectDexDebug
+> Task :app:mergeDebugJavaResource
+> Task :app:packageDebug
+> Task :app:createDebugApkListingFileRedirect
+> Task :app:assembleDebug
+
+BUILD SUCCESSFUL in 53s
+36 actionable tasks: 7 executed, 1 from cache, 28 up-to-date
