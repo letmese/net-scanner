@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -33,6 +34,7 @@ import com.netscanner.svc.AutoSpeedService
 import com.netscanner.ui.charts.DualLineChart
 import com.netscanner.ui.glass.GlassButton
 import com.netscanner.ui.glass.GlassChip
+import com.netscanner.ui.glass.GlassScreen
 import com.netscanner.ui.glass.KV
 import com.netscanner.ui.glass.LiquidGlassCard
 import com.netscanner.ui.theme.LocalGlassPalette
@@ -90,12 +92,12 @@ fun AutoSpeedScreen(nav: Navigator) {
             listOf(5, 10, 15, 30, 60).forEach { m ->
                 GlassChip(Modifier.clickable {
                     Stores.prefs(ctx).edit().putLong("auto_interval_min", m.toLong()).apply()
-                    interval = m; refresh++
+                    interval = m.toLong(); refresh++
                 }.padding(1.dp)) {
                     Text(
                         "${m}m", fontSize = 13.sp,
-                        color = if (interval == m) p.accent else p.dim,
-                        fontWeight = if (interval == m) FontWeight.Bold else FontWeight.Normal
+                        color = if (interval == m.toLong()) p.accent else p.dim,
+                        fontWeight = if (interval == m.toLong()) FontWeight.Bold else FontWeight.Normal
                     )
                 }
             }

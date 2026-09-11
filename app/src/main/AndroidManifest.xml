@@ -55,7 +55,7 @@
         </service>
 
         <service
-            android:name=".services.AutoSpeedService"
+            android:name=".svc.AutoSpeedService"
             android:exported="false"
             android:foregroundServiceType="specialUse">
             <property

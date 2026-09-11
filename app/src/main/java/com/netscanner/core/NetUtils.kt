@@ -75,7 +75,7 @@ object NetUtils {
                     if (ping(host)) alive.add(host)
                 } finally {
                     latch.countDown()
-                    onProgress?.invoke(254 - latch.count().toInt(), 254)
+                    onProgress?.invoke(254 - latch.count.toInt(), 254)
                 }
             }
         }
@@ -351,7 +351,7 @@ object NetUtils {
                 val buf = ByteArrayOutputStream()
                 val chunk = ByteArray(1024)
                 val ins: InputStream = s.getInputStream()
-                var n: Int
+                var n = 0
                 while (buf.size() < 65536 && ins.read(chunk).also { n = it } > 0) buf.write(chunk, 0, n)
                 buf.toString("ISO-8859-1")
             }
@@ -462,7 +462,7 @@ object NetUtils {
                 val buf = ByteArrayOutputStream()
                 val chunk = ByteArray(1024)
                 val ins = s.getInputStream()
-                var n: Int
+                var n = 0
                 while (buf.size() < 16384 && ins.read(chunk).also { n = it } > 0) buf.write(chunk, 0, n)
                 val resp = buf.toString("ISO-8859-1")
                 val a = resp.lowercase().indexOf("<title>")

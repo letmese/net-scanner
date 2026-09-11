@@ -44,7 +44,9 @@ class CellService : android.app.Service() {
                 super.onSignalStrengthsChanged(ss)
                 val dbm = cellDbm(ss)
                 lastDbm = dbm
-                lastAsu = ss?.getAsuLevel() ?: -1
+                lastAsu = try {
+                    SignalStrength::class.java.getMethod("getAsuLevel").invoke(ss) as Int
+                } catch (_: Exception) { -1 }
                 lastBars = barsOf(dbm)
                 if (dbm != Integer.MAX_VALUE) updateNotif()
             }
@@ -117,7 +119,10 @@ class CellService : android.app.Service() {
         fun cellDbm(ss: SignalStrength?): Int {
             if (ss == null) return Integer.MAX_VALUE
             return try {
-                if (Build.VERSION.SDK_INT >= 29) ss.dbm
+                val refl = try {
+                    SignalStrength::class.java.getMethod("getDbm").invoke(ss) as Int
+                } catch (_: Exception) { Integer.MAX_VALUE }
+                if (refl != Integer.MAX_VALUE && refl != 0) refl
                 else {
                     val g = ss.gsmSignalStrength
                     if (g != 99) -113 + 2 * g

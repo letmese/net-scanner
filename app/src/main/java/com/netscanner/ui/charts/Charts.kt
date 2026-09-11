@@ -25,14 +25,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.netscanner.ui.theme.LocalGlassPalette
-import kotlin.math.isnan
 
 /**
  * Pure-Canvas chart components (ports of the legacy LatencyView / SpeedView /
  * chart tabs). No third-party chart library; everything draws on Canvas.
  */
 
-@Composable
 private fun chartStrokeWidth(): Float = 2.5f
 
 /** Single-series line chart with soft gradient fill (legacy LatencyView port). */
@@ -46,7 +44,7 @@ fun LineChart(
     label: String? = null
 ) {
     val p = LocalGlassPalette.current
-    val valid = samples.filter { !isnan(it) }
+    val valid = samples.filter { !it.isNaN() }
     Column(modifier) {
         if (label != null) {
             Text(label, color = p.dim, fontSize = 12.sp)
@@ -107,10 +105,10 @@ fun DualLineChart(
             val y = size.height * i / 4f
             drawLine(grid, Offset(0f, y), Offset(size.width, y), 1f)
         }
-        val usable = points.filter { !isnan(it.second) || !isnan(it.third) }
+        val usable = points.filter { !it.second.isNaN() || !it.third.isNaN() }
         if (usable.size < 2) return@Canvas
         val maxV = maxOf(
-            usable.maxOf { maxOf(if (isnan(it.second)) 0f else it.second, if (isnan(it.third)) 0f else it.third) },
+            usable.maxOf { maxOf(if (it.second.isNaN()) 0f else it.second, if (it.third.isNaN()) 0f else it.third) },
             0.0001f
         )
         val tMin = usable.first().first
@@ -123,7 +121,7 @@ fun DualLineChart(
             var started = false
             for ((t, d, u) in usable) {
                 val v = if (series == 0) d else u
-                if (isnan(v)) continue
+                if (v.isNaN()) continue
                 val q = Offset(x(t), y(v))
                 if (!started) { path.moveTo(q.x, q.y); started = true } else path.lineTo(q.x, q.y)
             }
@@ -172,7 +170,7 @@ fun GaugeArc(
         }
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
-                if (isnan(value) || value <= 0f) "--" else String.format("%.1f", value),
+                if (value.isNaN() || value <= 0f) "--" else String.format("%.1f", value),
                 color = p.text, fontSize = 26.sp, fontWeight = FontWeight.Bold
             )
             Text("Mbps", color = p.dim, fontSize = 12.sp)

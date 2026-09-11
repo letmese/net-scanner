@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -44,10 +43,12 @@ import com.jcraft.jsch.JSch
 import com.netscanner.core.AppLog
 import com.netscanner.core.NetUtils
 import com.netscanner.core.Stores
+import com.netscanner.core.ToolEngine
 import com.netscanner.nav.Navigator
 import com.netscanner.svc.SnifferVpnService
 import com.netscanner.ui.glass.GlassButton
 import com.netscanner.ui.glass.GlassChip
+import com.netscanner.ui.glass.GlassScreen
 import com.netscanner.ui.glass.GlassTextField
 import com.netscanner.ui.glass.KV
 import com.netscanner.ui.glass.LiquidGlassCard
@@ -74,13 +75,17 @@ fun SnifferScreen(nav: Navigator) {
     var queries by remember { mutableStateOf(SnifferVpnService.recentQueries()) }
     var needGrant by remember { mutableStateOf(false) }
 
+    fun startSniffer(c: Context) {
+        androidx.core.content.ContextCompat.startForegroundService(
+            c, Intent(c, SnifferVpnService::class.java)
+        )
+    }
+
     val vpnLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) {
         if (android.net.VpnService.prepare(ctx) == null) {
-            com.netscanner.core.NetUtils.run {
-                startSniffer(ctx)
-            }
+            startSniffer(ctx)
             running = true
         }
     }
@@ -90,12 +95,6 @@ fun SnifferScreen(nav: Navigator) {
             if (running) queries = SnifferVpnService.recentQueries()
             delay(1000)
         }
-    }
-
-    fun startSniffer(c: Context) {
-        androidx.core.content.ContextCompat.startForegroundService(
-            c, Intent(c, SnifferVpnService::class.java)
-        )
     }
 
     GlassScreen("DNS Sniffer", nav) {
@@ -179,7 +178,7 @@ fun WolScreen(nav: Navigator) {
     GlassScreen("Wake on LAN", nav) {
         LiquidGlassCard(Modifier.fillMaxWidth()) {
             SectionTitle("Target MAC")
-            GlassTextField("e.g. AA:BB:CC:DD:EE:FF", mac, { mac = it })
+            GlassTextField(mac, { mac = it }, "e.g. AA:BB:CC:DD:EE:FF")
             Text(
                 "Packet is broadcast to 255.255.255.255:9 on UDP as 6×FF + 16×MAC.",
                 color = p.faint, fontSize = 12.sp
@@ -277,18 +276,18 @@ fun SshScreen(nav: Navigator) {
 
     GlassScreen("SSH", nav) {
         LiquidGlassCard(Modifier.fillMaxWidth()) {
-            GlassTextField("host", host, { host = it })
+            GlassTextField(host, { host = it }, "host")
             Spacer(Modifier.height(6.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                GlassTextField("port", port, { port = it }, Modifier.weight(1f))
-                GlassTextField("user", user, { user = it }, Modifier.weight(2f))
+                GlassTextField(port, { port = it }, "port", Modifier.weight(1f))
+                GlassTextField(user, { user = it }, "user", Modifier.weight(2f))
             }
             Spacer(Modifier.height(6.dp))
-            GlassTextField("password", pass, { pass = it })
+            GlassTextField(pass, { pass = it }, "password")
         }
         Spacer(Modifier.height(8.dp))
         SectionTitle("Command")
-        GlassTextField("e.g. uname -a", cmd, { cmd = it })
+        GlassTextField(cmd, { cmd = it }, "e.g. uname -a")
         Spacer(Modifier.height(6.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             GlassButton("Run", { run(cmd.ifBlank { "uname -a" }) }, enabled = !busy, accent = true)

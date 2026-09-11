@@ -1,10 +1,14 @@
 package com.netscanner.core
 
+import android.content.ContentValues
 import android.content.Context
 import android.net.DhcpInfo
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import android.net.wifi.WifiManager
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
@@ -44,6 +48,25 @@ object ToolEngine {
     /** Mutable context injected by the UI layer before invoking tools. */
     @Volatile var appCtx: Context? = null
 
+    /** Export text/CSV content into the public Downloads folder (MediaStore on Q+, legacy path below). */
+    fun exportCsv(ctx: Context, fileName: String, content: String) {
+        val cleaned = fileName.replace(Regex("[^A-Za-z0-9._-]"), "_")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val values = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, cleaned)
+                put(MediaStore.Downloads.MIME_TYPE, "text/csv")
+            }
+            val uri = ctx.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                ?: return
+            ctx.contentResolver.openOutputStream(uri)?.use { it.write(content.toByteArray()) }
+        } else {
+            @Suppress("DEPRECATION")
+            val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            dir.mkdirs()
+            java.io.File(dir, cleaned).writeText(content)
+        }
+    }
+
     // ───────────────── mDNS (streaming) ─────────────────
 
     private val MDNS_TYPES = arrayOf(
@@ -63,26 +86,6 @@ object ToolEngine {
         var running = true
         var resolving = false
         val pending = AtomicInteger(MDNS_TYPES.size)
-        append("Browsing ${MDNS_TYPES.size} service types… (12s)")
-        for (type in MDNS_TYPES) {
-            try {
-                nsd.discoverServices(type, NsdManager.PROTOCOL_DNS_SD, object : NsdManager.DiscoveryListener {
-                    override fun onDiscoveryStarted(t: String) {}
-                    override fun onDiscoveryStopped(t: String) {}
-                    override fun onStartDiscoveryFailed(t: String, e: Int) { pending.decrementAndGet() }
-                    override fun onStopDiscoveryFailed(t: String, e: Int) {}
-                    override fun onServiceLost(s: NsdServiceInfo) {}
-                    override fun onServiceFound(svc: NsdServiceInfo) {
-                        // NsdManager resolves one at a time — enqueue and drain sequentially
-                        queue.add(svc)
-                        drain()
-                    }
-                })
-            } catch (e: Exception) {
-                pending.decrementAndGet()
-            }
-        }
-
         fun drain() {
             if (resolving || !running) return
             val next = queue.poll() ?: return
@@ -100,6 +103,25 @@ object ToolEngine {
             } catch (e: Exception) {
                 resolving = false
                 drain()
+            }
+        }
+        append("Browsing ${MDNS_TYPES.size} service types… (12s)")
+        for (type in MDNS_TYPES) {
+            try {
+                nsd.discoverServices(type, NsdManager.PROTOCOL_DNS_SD, object : NsdManager.DiscoveryListener {
+                    override fun onDiscoveryStarted(t: String) {}
+                    override fun onDiscoveryStopped(t: String) {}
+                    override fun onStartDiscoveryFailed(t: String, e: Int) { pending.decrementAndGet() }
+                    override fun onStopDiscoveryFailed(t: String, e: Int) {}
+                    override fun onServiceLost(s: NsdServiceInfo) {}
+                    override fun onServiceFound(svc: NsdServiceInfo) {
+                        // NsdManager resolves one at a time — enqueue and drain sequentially
+                        queue.add(svc)
+                        drain()
+                    }
+                })
+            } catch (e: Exception) {
+                pending.decrementAndGet()
             }
         }
         try { Thread.sleep(12000) } catch (ignored: InterruptedException) {}
@@ -170,7 +192,7 @@ object ToolEngine {
         body.write(0x02); body.write(1); body.write(0x00)       // version 0 (v1)
         val comm = "public".toByteArray()
         body.write(0x04); body.write(comm.size); body.write(comm, 0, comm.size)
-        body.write(0xA0.toByte()); body.write(pduBytes.size); body.write(pduBytes, 0, pduBytes.size)
+        body.write(0xA0); body.write(pduBytes.size); body.write(pduBytes, 0, pduBytes.size)
         val bodyBytes = body.toByteArray()
         val msg = ByteArrayOutputStream()
         msg.write(0x30); msg.write(bodyBytes.size); msg.write(bodyBytes, 0, bodyBytes.size)
@@ -275,7 +297,7 @@ object ToolEngine {
             var ok = 0
             for (i in 0 until 3) {
                 val dom = domains[(System.nanoTime().toInt() + i) % domains.size]
-                val ms = if (r[1] == null) systemDnsMs(dom) else dnsQueryMs(r[1], dom, 1)
+                val ms = if (r[1] == null) systemDnsMs(dom) else dnsQueryMs(r[1]!!, dom, 1)
                 if (ms >= 0) { total += ms; ok++ }
                 try { Thread.sleep(120) } catch (ignored: InterruptedException) {}
             }
@@ -435,7 +457,7 @@ object ToolEngine {
         val b = ByteArrayOutputStream()
         val ins = c.inputStream
         val chunk = ByteArray(1024)
-        var n: Int
+        var n = 0
         while (ins.read(chunk).also { n = it } > 0) b.write(chunk, 0, n)
         c.disconnect()
         return b.toString("UTF-8").trim()
@@ -513,7 +535,7 @@ object ToolEngine {
             val ins = s.getInputStream()
             val b = ByteArrayOutputStream()
             val buf = ByteArray(1024)
-            var n: Int
+            var n = 0
             while (b.size() < 4096 && ins.read(buf).also { n = it } > 0) b.write(buf, 0, n)
             s.close()
             if (b.size() == 0) append("(connected — server said nothing)")
@@ -641,15 +663,15 @@ object ToolEngine {
         )
         var hijack = false
         for (r in resolvers) {
-            val ans = if (r[1] == null) (if (systemResolves(rnd)) 1 else 0) else dnsAnswerCount(r[1], rnd)
+            val ans = if (r[1] == null) (if (systemResolves(rnd)) 1 else 0) else dnsAnswerCount(r[1]!!, rnd)
             if (ans > 0) hijack = true
-            append("  " + r[0].padEnd(11) + " fake-domain answers: " + ans + (if (ans > 0) "   ⚠️ HIJACK?" else "   ok"))
+            append("  " + r[0]!!.padEnd(11) + " fake-domain answers: " + ans + (if (ans > 0) "   ⚠️ HIJACK?" else "   ok"))
         }
         append("")
         var first: String? = null
         var mismatch = false
         for (r in resolvers) {
-            val ips = if (r[1] == null) systemIps("google.com") else dnsAnswerIps(r[1], "google.com")
+            val ips = if (r[1] == null) systemIps("google.com") else dnsAnswerIps(r[1]!!, "google.com")
             if (ips.isEmpty()) continue
             if (first == null) first = ips
             else if (ips != first) {
@@ -770,7 +792,7 @@ object ToolEngine {
         if (ins != null) {
             val b2 = ByteArrayOutputStream()
             val buf = ByteArray(1024)
-            var n: Int
+            var n = 0
             while (b2.size() < 4096 && ins.read(buf).also { n = it } > 0) b2.write(buf, 0, n)
             append("\n" + b2.toString("UTF-8").replace(Regex("[\\x00-\\x08\\x0b\\x0c\\x0e-\\x1f]"), "."))
         }
@@ -791,7 +813,7 @@ object ToolEngine {
             val b = ByteArrayOutputStream()
             val ins = c.inputStream
             val chunk = ByteArray(1024)
-            var n: Int
+            var n = 0
             while (ins.read(chunk).also { n = it } > 0) b.write(chunk, 0, n)
             c.disconnect()
             append(b.toString("UTF-8").trim())
@@ -862,7 +884,7 @@ object ToolEngine {
                     if (code < 200 || code >= 300) throw java.io.IOException("HTTP $code ${c.responseMessage}")
                     ins = c.inputStream
                     val b = ByteArray(65536)
-                    var n: Int
+                    var n = 0
                     while (System.currentTimeMillis() < deadline && ins.read(b).also { n = it } > 0)
                         bytes.addAndGet(n.toLong())
                 } catch (ignored: Exception) {

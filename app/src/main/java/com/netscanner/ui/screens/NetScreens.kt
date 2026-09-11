@@ -236,7 +236,7 @@ fun UsageScreen(nav: Navigator) {
                 val nowSnap = JSONObject()
                 val pm2 = pm.getInstalledPackages(0)
                 for (pi in pm2) {
-                    val uid = pi.applicationInfo.uid
+                    val uid = pi.applicationInfo?.uid ?: continue
                     val rx = TrafficStats.getUidRxBytes(uid)
                     val tx = TrafficStats.getUidTxBytes(uid)
                     nowSnap.put(uid.toString(), JSONObject()
@@ -327,7 +327,6 @@ private fun hexPort(h: String) = h.toInt(16)
 private fun parseProcFile(path: String, proto: String, out: MutableList<Conn>) {
     try {
         val lines = java.io.File(path).readLines()
-        val pm = androidx.core.content.ContextCompat
         for (i in 1 until lines.size) {
             val cols = lines[i].trim().split(Regex("\\s+"))
             if (cols.size < 10) continue
@@ -346,7 +345,6 @@ private fun parseProcFile(path: String, proto: String, out: MutableList<Conn>) {
             out.add(Conn(proto, "${hexIp(la[0], v6)}:${hexPort(la[1])}",
                 "${hexIp(ra[0], v6)}:${hexPort(ra[1])}", state, "uid:${cols[7]}"))
         }
-        @Suppress("UNUSED_EXPRESSION") pm
     } catch (_: Exception) {}
 }
 

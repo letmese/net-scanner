@@ -72,7 +72,9 @@ object Fingerprinter {
             val chunk = ByteArray(256)
             try {
                 var n: Int
-                while (buf.size() < 256 && ins.read(chunk).also { n = it } > 0) {
+                while (buf.size() < 256) {
+                    n = ins.read(chunk)
+                    if (n <= 0) break
                     buf.write(chunk, 0, n)
                     if (buf.toString("ISO-8859-1").contains("\n")) break
                 }
@@ -114,7 +116,9 @@ object Fingerprinter {
             val chunk = ByteArray(512)
             var n: Int
             var sawEnd = false
-            while (buf.size() < 16384 && ins.read(chunk).also { n = it } > 0) {
+            while (buf.size() < 16384) {
+                n = ins.read(chunk)
+                if (n <= 0) break
                 buf.write(chunk, 0, n)
                 val soFar = buf.toString("ISO-8859-1")
                 if (!sawEnd && soFar.contains("\r\n\r\n")) sawEnd = true
@@ -163,7 +167,9 @@ object Fingerprinter {
             val chunk = ByteArray(512)
             try {
                 var n: Int
-                while (buf.size() < 2048 && ins.read(chunk).also { n = it } > 0) {
+                while (buf.size() < 2048) {
+                    n = ins.read(chunk)
+                    if (n <= 0) break
                     buf.write(chunk, 0, n)
                     if (buf.toString("ISO-8859-1").contains("\r\n\r\n")) break
                 }
@@ -243,7 +249,11 @@ object Fingerprinter {
             val ins = s.getInputStream()
             val chunk = ByteArray(512)
             var n: Int
-            while (buf.size() < 8192 && ins.read(chunk).also { n = it } > 0) buf.write(chunk, 0, n)
+            while (buf.size() < 8192) {
+                n = ins.read(chunk)
+                if (n <= 0) break
+                buf.write(chunk, 0, n)
+            }
             return buf.toString("ISO-8859-1")
         } finally {
             s.close()

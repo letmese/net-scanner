@@ -49,7 +49,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             GlassTheme {
                 val nav = Navigator()
-                BackHandlerEnabled()
+                nav.BackHandlerEnabled()
                 GlassBackdrop {
                     when (val route = nav.current) {
                         Route.Home -> HomeScreen(nav)

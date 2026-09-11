@@ -40,7 +40,6 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.shape.RoundedCornerShape
 import com.netscanner.core.AppLog
 import com.netscanner.core.ToolEngine
-import com.netscanner.nav.Nav
 import com.netscanner.nav.Navigator
 import com.netscanner.nav.Route
 import com.netscanner.ui.glass.GlassScreen
@@ -48,7 +47,6 @@ import com.netscanner.ui.glass.LiquidGlassCard
 import com.netscanner.ui.glass.GlassChip
 import com.netscanner.ui.theme.LocalGlassPalette
 import com.netscanner.ui.theme.GlassColors
-import kotlin.math.isnan
 
 /** 24-tile catalog — exact port of legacy ToolsActivity grid. */
 data class ToolTile(val emoji: String, val title: String, val sub: String, val dest: Route)
@@ -221,8 +219,8 @@ fun ToolRunScreen(nav: Navigator, id: String) {
                     LiquidGlassCard(Modifier.weight(1f), cornerRadius = 20.dp) {
                         Box(Modifier.fillMaxWidth().height(120.dp)) {
                             com.netscanner.ui.charts.GaugeArc(
-                                if (isnan(gaugeDown)) 0f else gaugeDown,
-                                1000f, "Mbps", "DOWN", GlassColors.Accent,
+                                if (gaugeDown.isNaN()) 0f else gaugeDown,
+                                1000f, "DOWN", GlassColors.Accent,
                                 Modifier.fillMaxSize()
                             )
                         }
@@ -230,8 +228,8 @@ fun ToolRunScreen(nav: Navigator, id: String) {
                     LiquidGlassCard(Modifier.weight(1f), cornerRadius = 20.dp) {
                         Box(Modifier.fillMaxWidth().height(120.dp)) {
                             com.netscanner.ui.charts.GaugeArc(
-                                if (isnan(gaugeUp)) 0f else gaugeUp,
-                                1000f, "Mbps", "UP", GlassColors.Violet,
+                                if (gaugeUp.isNaN()) 0f else gaugeUp,
+                                1000f, "UP", GlassColors.Violet,
                                 Modifier.fillMaxSize()
                             )
                         }

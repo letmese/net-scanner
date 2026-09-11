@@ -145,14 +145,14 @@ class SnifferVpnService : VpnService() {
         System.arraycopy(req, 0, o, 0, ihl + 8)
         o[2] = ((total shr 8) and 0xFF).toByte(); o[3] = (total and 0xFF).toByte()
         val appIp = req.copyOfRange(12, 16)
-        o[12] = 10; o[13] = 111; o[14] = 222; o[15] = 1     // new src = fake DNS
+        o[12] = 10.toByte(); o[13] = 111.toByte(); o[14] = 222.toByte(); o[15] = 1.toByte()     // new src = fake DNS
         System.arraycopy(appIp, 0, o, 16, 4)                // dst = app inner IP
         o[udpOff] = ((udpLen shr 8) and 0xFF).toByte(); o[udpOff + 1] = (udpLen and 0xFF).toByte()
-        o[udpOff + 2] = 0; o[udpOff + 3] = 53               // src port 53
+        o[udpOff + 2] = 0.toByte(); o[udpOff + 3] = 53.toByte()               // src port 53
         o[udpOff + 4] = ((srcPort shr 8) and 0xFF).toByte(); o[udpOff + 5] = (srcPort and 0xFF).toByte()
         System.arraycopy(dns, 0, o, ihl + 8, dns.size)
         var sum = 0L
-        o[10] = 0; o[11] = 0
+        o[10] = 0.toByte(); o[11] = 0.toByte()
         var i = 0
         while (i < ihl) {
             sum += ((o[i].toInt() and 0xFF) shl 8) or (o[i + 1].toInt() and 0xFF)

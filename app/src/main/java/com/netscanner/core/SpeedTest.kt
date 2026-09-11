@@ -98,7 +98,7 @@ object SpeedTestRunner {
                     if (code < 200 || code >= 300) throw IOException("HTTP $code")
                     ins = c.inputStream
                     val b = ByteArray(65536)
-                    var n: Int
+                    var n = 0
                     while (System.currentTimeMillis() < deadline && ins.read(b).also { n = it } > 0)
                         bytes.addAndGet(n.toLong())
                 } catch (e: Exception) {
