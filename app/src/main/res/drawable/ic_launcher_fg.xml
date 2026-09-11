@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+
+    <!-- engine pods (drawn first so wings overlap their roots) -->
+    <path android:strokeColor="#FFFFFF" android:strokeWidth="3.2"
+        android:strokeLineCap="round"
+        android:pathData="M39,46 L37,52 M69,46 L71,52
+                          M32,50.5 L30.5,55.5 M76,50.5 L77.5,55.5"/>
+
+    <!-- swept wings -->
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M51.5,42 L27,55 L27,58 L51.5,54.5 Z
+                          M56.5,42 L81,55 L81,58 L56.5,54.5 Z"/>
+
+    <!-- swept horizontal stabilizers -->
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M51.5,69.5 L37.5,77.5 L37.5,79.5 L51.5,76 Z
+                          M56.5,69.5 L70.5,77.5 L70.5,79.5 L56.5,76 Z"/>
+
+    <!-- vertical fin (top view) -->
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M53.3,64 L54.7,64 L54.7,78 L53.3,78 Z"/>
+
+    <!-- airliner fuselage, nose up -->
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M54,24 C57,26.5 58.5,31 58.5,37 L58.5,68
+                          C58.5,74.5 57,79.5 54,82
+                          C51,79.5 49.5,74.5 49.5,68 L49.5,37
+                          C49.5,31 51,26.5 54,24 Z"/>
+
+    <!-- dark gap so the dome separates from the airframe -->
+    <path android:fillColor="#FF0B101B"
+        android:pathData="M54,53 m-11.6,0 a11.6,11.6 0 1,1 23.2,0 a11.6,11.6 0 1,1 -23.2,0"/>
+
+    <!-- rotodome: one solid disc -->
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M54,53 m-9.4,0 a9.4,9.4 0 1,1 18.8,0 a9.4,9.4 0 1,1 -18.8,0"/>
+</vector>
