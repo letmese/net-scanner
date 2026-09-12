@@ -18,37 +18,51 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.net.DatagramPacket
 import java.net.DatagramSocket
+import java.net.Inet4Address
 import java.net.InetAddress
 import java.net.InetSocketAddress
-import java.util.ArrayDeque
 import java.util.LinkedHashSet
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * v5.1.3 DNS Sniffer VPN -- FAITHFUL mechanism port of the proven legacy
- * v4.7/4.8 SnifferVpnService (transparent interception), replacing the
- * v5.1.2 fake-DNS-server design:
+ * v5.1.5 DNS Sniffer VPN — legacy transparent-interception mechanism (v4.7/4.8
+ * port, confirmed base) with a full in-app debug log (Settings → DNS Sniffer
+ * Debug) and this round's static fixes:
  *
- *  Legacy mechanism (what actually worked for years):
- *   - TUN address 10.111.222.1/32, DNS server 8.8.8.8 (a REAL resolver, so
- *     the VPN network has a valid DNS config).
- *   - Routes = the real public DNS IPs (8.8.8.8/32, 1.1.1.1/32) PLUS the
- *     network's own DHCP/system DNS servers /32. Any plaintext UDP/53
- *     query the device sends therefore rides the TUN -- nothing else is
- *     captured, normal data is untouched.
- *   - read loop: catch UDP packets whose dst port is 53, forward the
- *     payload through a PROTECTED socket to the packet's ORIGINAL
- *     destination (preserves captive/ISP/LAN resolver semantics), then
- *     write the response back into the TUN with:
- *       src ip = original dst (the real server the app queried)
- *       src port = 53, dst = original src + its port
- *       UDP checksum = 0 (legal "no checksum" on IPv4)
- *       IP checksum recomputed.
- *   - QNAMEs are parsed and pushed into the log deque for the UI.
+ *  1. IPv6 DNS servers from LinkProperties are NO LONGER half-routed into the
+ *     IPv4-only TUN. Previously addRoute(v6Ip, 32) silently routed chunks of
+ *     the IPv6 DNS space into a TUN whose read path drops every non-IPv4
+ *     packet — those queries vanished and lookups stalled. Now only IPv4 DNS
+ *     IPs are routed; since the builder only configures an IPv4 address and an
+ *     IPv4 DNS server (8.8.8.8), the system inside the VPN falls back to IPv4
+ *     DNS instead of half-routing IPv6.
+ *  2. addDnsServer stays aligned with the legacy builder: a REAL resolver
+ *     (8.8.8.8) so the VPN network has a valid DNS configuration.
+ *  3. Routes cover every IPv4 DNS server enumerated from all networks'
+ *     LinkProperties plus the legacy public resolver set, each as /32 — so
+ *     plaintext queries to the network's own resolvers ride the TUN.
+ *  4. protect() is called on the forward socket BEFORE it is connected (and
+ *     before any traffic); the boolean result is logged — a false/failed
+ *     protect is flagged loudly since the socket would loop back into the TUN.
+ *  5. The read loop survives malformed packets: per-packet handling is
+ *     exception-isolated with stack-trace logging, and TUN read errors back
+ *     off (50ms) with a consecutive-failure cap instead of spinning/bricking.
+ *  6. The forward pool is REBUILT on every start — stopTun() shuts it down
+ *     (interrupting blocked workers), and reusing a shut-down pool would
+ *     silently reject every packet after a stop/start cycle.
  *
- *  Kept from v5.1.2 (harmless hardening): the sniffer app itself is
- *  excluded from the VPN, and if the original destination does not answer
- *  we fall back to 8.8.8.8 / 1.1.1.1 before giving up.
+ * Legacy mechanism kept verbatim (what actually worked for years):
+ *  - TUN address 10.111.222.1/32, DNS server 8.8.8.8.
+ *  - Routes = real DNS IPs as /32; only DNS rides the TUN, normal data is
+ *    untouched.
+ *  - read loop: UDP dst:53 packets are forwarded through a PROTECTED socket
+ *    to the packet's ORIGINAL destination (captive/ISP/LAN resolver
+ *    semantics), falling back to public resolvers; the response is written
+ *    back with src = original dst IP, src port 53, dst = original src + port,
+ *    UDP checksum 0 (legal "none" on IPv4), IP checksum recomputed.
+ *  - The sniffer app itself is excluded from the VPN.
  */
 class SnifferVpnService : VpnService() {
 
@@ -56,43 +70,60 @@ class SnifferVpnService : VpnService() {
     @Volatile private var stopFlag = false
     private var worker: Thread? = null
 
-    /** Legacy forward pipeline: fixed 4-worker pool, one thread per DNS packet. */
-    private val forwardPool = java.util.concurrent.Executors.newFixedThreadPool(4)
+    /** Legacy forward pipeline: fixed 4-worker pool, one task per DNS packet.
+     *  Nullable + rebuilt in startTun() — shutdownNow() in stopTun() makes a
+     *  stale pool reject every future task (static fix #6). */
+    private var forwardPool: ThreadPoolExecutor? = null
 
-    /** Legacy route sources: hardcoded publics + whatever the network uses. */
+    /** Legacy route sources: hardcoded publics + the network's IPv4 DNS. */
     private val routedDns = LinkedHashSet<String>()
 
     override fun onCreate() {
         super.onCreate()
+        SnifferDebugLog.i("service: onCreate")
         collectNetworkDns()
     }
 
-    /** Legacy getDhcpDns(): current network LinkProperties DNS servers. */
+    /**
+     * Enumerate the device's real DNS servers from every network's
+     * LinkProperties (static fix #3 + #1): IPv4 servers are routed as /32,
+     * IPv6 servers are deliberately NOT routed (IPv4-only TUN) and logged.
+     */
     private fun collectNetworkDns() {
+        routedDns.clear()
         try {
             val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-            val nets = cm.allNetworks
-            for (net in nets) {
+            for (net in cm.allNetworks) {
                 val lp: LinkProperties? = cm.getLinkProperties(net)
+                val ifName = lp?.interfaceName ?: "?"
                 lp?.dnsServers?.forEach { s ->
-                    val h = s.hostAddress
-                    if (h != null && !s.isLoopbackAddress) routedDns.add(h)
+                    val h = s.hostAddress ?: return@forEach
+                    if (s is Inet4Address && !s.isLoopbackAddress) {
+                        if (routedDns.add(h)) {
+                            SnifferDebugLog.i("net-dns: v4 $h [$ifName] — will route /32")
+                        }
+                    } else {
+                        SnifferDebugLog.i(
+                            "net-dns: $h [$ifName] — IPv6/loopback, NOT routed " +
+                                "(IPv4-only TUN, avoid half-routing IPv6)"
+                        )
+                    }
                 }
             }
         } catch (e: Exception) {
-            Log.w(TAG, "collectNetworkDns failed: ${e.message}")
+            SnifferDebugLog.w("collectNetworkDns failed: ${e.message}", e)
         }
         routedDns.addAll(DEFAULT_DNS)
-        Log.d(TAG, "routed DNS targets: $routedDns")
+        SnifferDebugLog.i("net-dns: final route set = $routedDns")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
-            Log.d(TAG, "stop requested")
+            SnifferDebugLog.i("lifecycle: stop requested (ACTION_STOP)")
             stopSelf()
             return START_NOT_STICKY
         }
-        Log.d(TAG, "onStartCommand -- establishing transparent TUN")
+        SnifferDebugLog.i("lifecycle: onStartCommand — establishing transparent TUN")
         startAsForeground()
         startTun()
         return START_STICKY
@@ -119,121 +150,235 @@ class SnifferVpnService : VpnService() {
 
     private fun startTun() {
         stopTun()
+        // Static fix #6: rebuild the forward pool (stopTun shut the old one down).
+        forwardPool = java.util.concurrent.Executors.newFixedThreadPool(4) as ThreadPoolExecutor
+        SnifferDebugLog.i("pool: forward pool rebuilt (4 workers)")
+
         try {
             val b = Builder()
-                .setSession("NetScanner DNS Sniffer")
-                .addAddress("10.111.222.1", 32)
-                .addDnsServer("8.8.8.8")            // legacy: a REAL resolver so the VPN network's DNS config is valid
-            // Legacy route set: every DNS server the device could ever use,
-            // each as a /32 -- only DNS rides the TUN.
+            b.setSession("NetScanner DNS Sniffer")
+            SnifferDebugLog.i("builder: session=\"NetScanner DNS Sniffer\"")
+            b.addAddress("10.111.222.1", 32)
+            SnifferDebugLog.i("builder: addAddress 10.111.222.1/32 (TUN local, IPv4-only by design)")
+            SnifferDebugLog.i("builder: MTU not set (legacy default, matches old version)")
+            b.addDnsServer("8.8.8.8")   // legacy: REAL resolver so the VPN DNS config is valid
+            SnifferDebugLog.i("builder: addDnsServer 8.8.8.8 (legacy-aligned real resolver)")
+
             collectNetworkDns()
+            var routed = 0
             routedDns.forEach { ip ->
-                try { b.addRoute(ip, 32) } catch (e: Exception) {
-                    Log.w(TAG, "route $ip failed: ${e.message}")
-                }
+                try { b.addRoute(ip, 32); routed++; SnifferDebugLog.i("builder: addRoute $ip/32") }
+                catch (e: Exception) { SnifferDebugLog.w("builder: addRoute $ip/32 FAILED: ${e.message}", e) }
             }
-            // Hardening kept from v5.1.2: never route our own forwarder back
-            // into the TUN.
+            SnifferDebugLog.i("builder: $routed DNS routes total (/32 each — DNS-only TUN)")
+
             try { b.addDisallowedApplication(packageName) } catch (e: Exception) {
-                Log.w(TAG, "addDisallowedApplication failed: ${e.message}")
+                SnifferDebugLog.w("builder: addDisallowedApplication failed: ${e.message}", e)
             }
-            tun = b.establish()
+            SnifferDebugLog.i("builder: self (${packageName}) excluded from the VPN")
+
+            tun = try {
+                val p = b.establish()
+                if (p != null) SnifferDebugLog.i("establish: OK, tun fd open (fd=${p.fileDescriptor})")
+                else SnifferDebugLog.e("establish: returned NULL (check VPN consent / other active VPN)")
+                p
+            } catch (e: Exception) {
+                SnifferDebugLog.e("establish: threw", e)
+                null
+            }
         } catch (e: Exception) {
-            Log.e(TAG, "establish() failed: ${e.message}")
+            SnifferDebugLog.e("builder: failed", e)
             tun = null
         }
         if (tun == null) {
-            // v5.1.2 hardening: no zombie state -- UI must see the VPN as stopped.
+            // No zombie state — UI must see the VPN as stopped.
+            SnifferDebugLog.e("lifecycle: establishment FAILED, service stays up but idle")
             running.set(false)
             return
         }
 
         val fd = tun!!.fileDescriptor
         stopFlag = false
-        Log.d(TAG, "TUN established, legacy loop() starting")
+        SnifferDebugLog.i("lifecycle: TUN established, read loop starting")
         worker = Thread {
             running.set(true)
             val input = FileInputStream(fd)
             val output = FileOutputStream(fd)
             val buf = ByteArray(32767)
+            var readErrs = 0
             try {
                 while (!stopFlag) {
-                    val n = input.read(buf)
-                    if (n <= 0) break
-                    // Legacy pipeline: forward each packet on the thread pool
-                    // (4 workers) so one slow upstream never stalls the TUN
-                    // read loop. copyOf is REQUIRED -- buf is reused by read().
+                    val n = try { input.read(buf) } catch (e: Exception) {
+                        readErrs++
+                        if (stopFlag || tun == null) {
+                            SnifferDebugLog.i("read-loop: TUN closed, exiting")
+                            break
+                        }
+                        if (readErrs > 100) {
+                            SnifferDebugLog.e("read-loop: 100 consecutive read errors, exiting", e)
+                            break
+                        }
+                        // Static fix #5: back off instead of spinning; transient
+                        // EIO must not brick the sniffer.
+                        try { Thread.sleep(50) } catch (_: InterruptedException) { break }
+                        continue
+                    }
+                    if (n < 0) { SnifferDebugLog.i("read-loop: EOF, exiting"); break }
+                    if (n == 0) continue
+                    readErrs = 0
+                    // copyOf is REQUIRED — buf is reused by read().
                     val pkt = buf.copyOf(n)
-                    forwardPool.execute {
-                        try { handlePacket(pkt, pkt.size, output) } catch (_: Throwable) {}
+                    val pool = forwardPool
+                    if (pool == null || pool.isShutdown) {
+                        SnifferDebugLog.e("read-loop: forward pool unavailable, exiting")
+                        break
+                    }
+                    try {
+                        pool.execute {
+                            try { handlePacket(pkt, pkt.size, output) }
+                            catch (t: Throwable) {
+                                // Static fix #5: one bad packet never stops the sniffer.
+                                SnifferDebugLog.e("worker: packet handler crashed (sniffer stays alive)", t)
+                            }
+                        }
+                    } catch (e: RejectedExecutionException) {
+                        SnifferDebugLog.w("pool: task rejected (pool shutting down): ${e.message}")
                     }
                 }
-            } catch (_: Throwable) {
             } finally {
                 running.set(false)
-                Log.d(TAG, "worker loop exited")
+                SnifferDebugLog.i("lifecycle: TUN read loop exited")
             }
         }.apply { isDaemon = true; start() }
     }
 
-    /** Legacy handle(): if UDP dst:53 -> log QNAME, forward to the ORIGINAL dst, reply. */
+    private fun poolState(): String {
+        val p = forwardPool ?: return "pool=none"
+        return "pool(active=${p.activeCount},queued=${p.queue.size})"
+    }
+
+    /** Legacy handle(): if UDP dst:53 -> log QNAME+type, forward to the ORIGINAL dst, reply. */
     private fun handlePacket(buf: ByteArray, n: Int, out: FileOutputStream) {
-        if (n < 28) return                                  // IP(20)+UDP(8)+DNS header(12)
-        if (buf[0].toInt() and 0xF0 != 0x40) return         // IPv4 only
-        val ihl = (buf[0].toInt() and 0x0F) * 4
-        if (n < ihl + 8) return
-        val proto = buf[9].toInt() and 0xFF
-        if (proto != 17) return                             // UDP only
-        val udpOff = ihl
-        val dstPort = ((buf[udpOff + 2].toInt() and 0xFF) shl 8) or (buf[udpOff + 3].toInt() and 0xFF)
-        if (dstPort != 53) return
-        val dnsLen = n - udpOff - 8
-        if (dnsLen < 12) return
-        val dns = buf.copyOfRange(udpOff + 8, n)
-        val domain = queryDomain(dns)
-        if (domain != null) record(domain)
-
-        // Legacy forwarding semantics: send to the packet's ORIGINAL
-        // destination first (ISP / LAN / captive resolvers keep working),
-        // then fall back to the public resolvers.
-        val dstIp = ByteArray(4)
-        System.arraycopy(buf, 16, dstIp, 0, 4)
-        val originalDst = dstIp.joinToString(".") { (it.toInt() and 0xFF).toString() }
-
-        var resp: ByteArray? = null
-        val order = ArrayList<String>(UPSTREAMS.size + 1)
-        order.add(originalDst)
-        UPSTREAMS.forEach { if (it != originalDst) order.add(it) }
-        for (up in order) {
-            resp = tryUdpForward(dns, up)
-            if (resp != null) {
-                if (up != originalDst) Log.d(TAG, "original dst $originalDst failed, answered by $up")
-                break
+        try {
+            if (n < 28) { SnifferDebugLog.packet("drop: too short (${n}B)"); return }
+            if (buf[0].toInt() and 0xF0 != 0x40) {
+                SnifferDebugLog.packet("drop: not IPv4 (first byte 0x${Integer.toHexString(buf[0].toInt() and 0xFF)})")
+                return
             }
-        }
-        if (resp == null) Log.w(TAG, "all upstreams failed for ${domain ?: "?"}")
+            val ihl = (buf[0].toInt() and 0x0F) * 4
+            if (n < ihl + 8) {
+                SnifferDebugLog.packet("drop: truncated header (n=$n < ihl=$ihl + 8)")
+                return
+            }
+            val proto = buf[9].toInt() and 0xFF
+            val src = ipStr(buf, 12)
+            val dst = ipStr(buf, 16)
+            if (proto != 17) {
+                SnifferDebugLog.packet("drop: non-UDP (proto=$proto) $src -> $dst")
+                return
+            }
+            val udpOff = ihl
+            val srcPort = ((buf[udpOff].toInt() and 0xFF) shl 8) or (buf[udpOff + 1].toInt() and 0xFF)
+            val dstPort = ((buf[udpOff + 2].toInt() and 0xFF) shl 8) or (buf[udpOff + 3].toInt() and 0xFF)
+            SnifferDebugLog.packet("intercepted: ${n}B udp $src:$srcPort -> $dst:$dstPort ${poolState()}")
+            if (dstPort != 53) {
+                SnifferDebugLog.packet("drop: udp to $dst:$dstPort is not DNS")
+                return
+            }
+            val dnsLen = n - udpOff - 8
+            if (dnsLen < 12) {
+                SnifferDebugLog.packet("drop: DNS payload too short (${dnsLen}B)")
+                return
+            }
+            val dns = buf.copyOfRange(udpOff + 8, n)
+            val parsed = parseQuery(dns)
+            if (parsed != null) {
+                val (domain, qtype) = parsed
+                record(domain)
+                SnifferDebugLog.dns("query $domain type=${qtypeName(qtype)} (${dnsLen}B) $src:$srcPort -> $dst:53")
+            } else {
+                SnifferDebugLog.dns("query UNPARSEABLE (${dnsLen}B) $src:$srcPort -> $dst:53")
+            }
 
-        if (resp != null) {
+            // Legacy forwarding semantics: send to the packet's ORIGINAL
+            // destination first (ISP / LAN / captive resolvers keep working),
+            // then fall back to the public resolvers.
+            var resp: ByteArray? = null
+            val order = ArrayList<String>(UPSTREAMS.size + 1)
+            order.add(dst)
+            UPSTREAMS.forEach { if (it != dst) order.add(it) }
+            for (up in order) {
+                val fr = tryUdpForward(dns, up)
+                if (fr.error == null && fr.data != null) {
+                    resp = fr.data
+                    if (up != dst) {
+                        SnifferDebugLog.w("fwd: original dst $dst:53 did not answer, fallback $up replied")
+                    }
+                    break
+                }
+            }
+            if (resp == null) {
+                SnifferDebugLog.e("fwd: ALL upstreams failed for ${parsed?.first ?: dst}:53 — client will retry")
+                return
+            }
+
             val outPkt = buildReply(buf, ihl, udpOff, resp)
-            try { out.write(outPkt) } catch (_: Exception) {}
+            try {
+                out.write(outPkt)
+                SnifferDebugLog.packet("reply: wrote ${outPkt.size}B to TUN ($dst:53 -> $src:$srcPort)")
+            } catch (e: Exception) {
+                SnifferDebugLog.e("reply: TUN write failed (${outPkt.size}B)", e)
+            }
+        } catch (t: Throwable) {
+            // Static fix #5: malformed packet must never take down the loop.
+            SnifferDebugLog.e("handlePacket: unexpected error (sniffer stays alive)", t)
         }
     }
 
-    /** One protected UDP round-trip to `up:53`; null on any failure. */
-    private fun tryUdpForward(dns: ByteArray, up: String): ByteArray? = try {
-        DatagramSocket().use { sock ->
-            try { protect(sock) } catch (_: Exception) {}
-            sock.soTimeout = 3000
-            sock.send(DatagramPacket(dns, dns.size,
-                InetSocketAddress(InetAddress.getByName(up), 53)))
-            val rb = ByteArray(4096)
-            val rp = DatagramPacket(rb, rb.size)
-            sock.receive(rp)
-            rb.copyOf(rp.length)
+    /**
+     * One protected UDP round-trip to `up:53`.
+     * Static fix #4: protect() runs BEFORE connect/send and its boolean
+     * result is recorded — a non-protected socket would loop back into the
+     * TUN itself and never reach the network.
+     */
+    private fun tryUdpForward(dns: ByteArray, up: String): ForwardResult {
+        val t0 = System.nanoTime()
+        var prot = false
+        try {
+            DatagramSocket(null).use { sock ->
+                prot = try { protect(sock) } catch (e: Exception) {
+                    SnifferDebugLog.w("protect($up) threw: ${e.message}", e)
+                    false
+                }
+                if (!prot) {
+                    SnifferDebugLog.w("protect($up) = false — socket NOT protected, forward will loop into TUN")
+                }
+                sock.soTimeout = 3000
+                val addr = InetSocketAddress(InetAddress.getByName(up), 53)
+                sock.connect(addr)                       // protect happened before this connect
+                sock.send(DatagramPacket(dns, dns.size)) // protect happened before this send
+                val rb = ByteArray(4096)
+                val rp = DatagramPacket(rb, rb.size)
+                sock.receive(rp)
+                val ms = (System.nanoTime() - t0) / 1_000_000
+                SnifferDebugLog.packet(
+                    "fwd: $up:53 OK bytes=${rp.length} latency=${ms}ms protected=yes ${poolState()}")
+                return ForwardResult(rb.copyOf(rp.length), ms, null, prot)
+            }
+        } catch (e: Exception) {
+            val ms = (System.nanoTime() - t0) / 1_000_000
+            SnifferDebugLog.packet("fwd: $up:53 FAILED after ${ms}ms (protected=$prot) " +
+                "${e.javaClass.simpleName}: ${e.message}")
+            return ForwardResult(null, ms, e, prot)
         }
-    } catch (_: Exception) {
-        null
     }
+
+    private class ForwardResult(
+        val data: ByteArray?,
+        val latencyMs: Long,
+        val error: Throwable?,
+        val protectedFlag: Boolean,
+    )
 
     /**
      * Legacy buildReply semantics: the reply appears to come from the REAL
@@ -270,9 +415,14 @@ class SnifferVpnService : VpnService() {
         return o
     }
 
-    /** Extract QNAME from a DNS query payload, null if malformed. */
-    private fun queryDomain(d: ByteArray): String? {
+    private fun ipStr(b: ByteArray, off: Int): String =
+        "${b[off].toInt() and 0xFF}.${b[off + 1].toInt() and 0xFF}." +
+            "${b[off + 2].toInt() and 0xFF}.${b[off + 3].toInt() and 0xFF}"
+
+    /** QNAME + QTYPE from a DNS query payload, null if malformed. */
+    private fun parseQuery(d: ByteArray): Pair<String, Int>? {
         return try {
+            if (d.size < 12) return null
             if (d[2].toInt() and 0x80 != 0) return null           // not a query
             val qd = ((d[4].toInt() and 0xFF) shl 8) or (d[5].toInt() and 0xFF)
             if (qd == 0) return null
@@ -280,34 +430,48 @@ class SnifferVpnService : VpnService() {
             val sb = StringBuilder()
             while (p < d.size) {
                 val len = d[p].toInt() and 0xFF
-                if (len == 0) break
+                if (len == 0) { p += 1; break }
+                if (len > 63) return null                          // compression ptr: not a plain query
                 if (p + 1 + len > d.size) return null
                 if (sb.isNotEmpty()) sb.append('.')
                 sb.append(String(d, p + 1, len, Charsets.ISO_8859_1))
                 p += 1 + len
             }
-            if (sb.isEmpty()) null else sb.toString()
+            if (sb.isEmpty()) return null
+            var qtype = -1
+            if (p + 2 <= d.size) qtype = ((d[p].toInt() and 0xFF) shl 8) or (d[p + 1].toInt() and 0xFF)
+            sb.toString() to qtype
         } catch (_: Exception) {
             null
         }
+    }
+
+    private fun qtypeName(t: Int): String = when (t) {
+        1 -> "A"; 2 -> "NS"; 5 -> "CNAME"; 6 -> "SOA"; 12 -> "PTR"; 15 -> "MX"
+        16 -> "TXT"; 28 -> "AAAA"; 33 -> "SRV"; 65 -> "HTTPS"; 255 -> "ANY"
+        -1 -> "?"
+        else -> "TYPE$t"
     }
 
     private fun stopTun() {
         stopFlag = true
         worker?.interrupt()
         worker = null
-        forwardPool.shutdownNow()
-        try { tun?.close() } catch (_: Exception) {}
+        try { forwardPool?.shutdownNow() } catch (_: Exception) {}
+        forwardPool = null
+        try { tun?.close() } catch (e: Exception) { SnifferDebugLog.w("stopTun: close failed: ${e.message}") }
         tun = null
     }
 
     override fun onDestroy() {
+        SnifferDebugLog.i("lifecycle: onDestroy")
         running.set(false)
         stopTun()
         super.onDestroy()
     }
 
     override fun onRevoke() {
+        SnifferDebugLog.i("lifecycle: onRevoke (VPN revoked by system/user)")
         onDestroy()
         super.onRevoke()
     }
