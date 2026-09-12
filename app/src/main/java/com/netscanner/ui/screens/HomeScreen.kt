@@ -70,7 +70,7 @@ private val TINTS = intArrayOf(
 private val HOME_TILES = listOf(
     HomeTile("🔍", "Scan Network", "Find devices on your LAN", "e.g. ID the unknown device next door", 0, Route.Scan),
     HomeTile("🩺", "Health Score", "Grade your connection", "e.g. blame the ISP before the router", 3, Route.Health),
-    HomeTile("⚡", "Speed Test", "Download / upload", "e.g. verify the new router is faster", 5, Route.Tool("speed")),
+    HomeTile("⚡", "Speed Test", "Download / upload", "e.g. verify the new router is faster", 5, Route.SpeedTest),
     HomeTile("📈", "Ping Monitor", "Latency graph & jitter", "e.g. see when a call freezes", 1, Route.PingMonitor),
     HomeTile("🎯", "Multi-Ping", "Track several hosts live", "e.g. watch router + NAS + TV at once", 2, Route.MultiPing),
     HomeTile("⏱", "Auto Speed", "Interval tests + full log", "e.g. prove evening slowdowns to the ISP", 6, Route.AutoSpeed),

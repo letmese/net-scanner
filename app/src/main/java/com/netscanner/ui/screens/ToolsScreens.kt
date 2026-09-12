@@ -59,7 +59,7 @@ data class ToolTile(
 object ToolsCatalog {
     val tiles = listOf(
         ToolTile("🩺", "Health Score", "Grade your connection", "e.g. find out if call lag is Wi-Fi or ISP", Route.Health),
-        ToolTile("⚡", "Speed Test", "Download / upload", "e.g. verify the new router is really faster", Route.Tool("speed")),
+        ToolTile("⚡", "Speed Test", "Download / upload", "e.g. verify the new router is really faster", Route.SpeedTest),
         ToolTile("📈", "Ping Monitor", "Latency graph & jitter", "e.g. watch jitter spike as a call freezes", Route.PingMonitor),
         ToolTile("📊", "Connection Monitor", "Live per-app traffic", "e.g. see which app eats your data", Route.Connections),
         ToolTile("📶", "Wi-Fi Analyzer", "Channels & signal", "e.g. pick a quiet channel for your AP", Route.WifiAnalyzer),
