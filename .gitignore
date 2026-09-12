@@ -9,3 +9,8 @@ captures/
 
 build_out.log
 build_err.log
+
+gradle_out.txt
+gradle_err.txt
+go*.txt
+ge*.txt
