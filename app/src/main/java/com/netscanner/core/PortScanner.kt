@@ -1,13 +1,34 @@
 package com.netscanner.core
 
+import java.io.IOException
+import java.net.ConnectException
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.net.SocketTimeoutException
 import java.util.Collections
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+
+/** nmap-style per-port verdict — v5.2.0. */
+data class PortResult(
+    val port: Int,
+    val state: String,          // "OPEN" / "CLOSED" / "FILTERED"
+    val service: String,
+    val banner: String? = null, // software/version from Fingerprinter probes
+    val hint: String? = null,   // how-to-connect line from ConnHints
+    val risk: String? = null,   // Fingerprinter.riskNote for exposed services
+    val latencyMs: Int = -1
+)
+
+/** Full result of a detailed scan: all probed ports + elapsed ms. */
+data class PortScanDetailed(
+    val results: List<PortResult>,
+    val elapsedMs: Long,
+    val hostUp: Boolean
+)
 
 /** TCP connect scanner — root-free. 1:1 Kotlin port of legacy PortScanner. */
 object PortScanner {
@@ -108,5 +129,96 @@ object PortScanner {
         pool.shutdownNow()
         Collections.sort(open)
         return open to (System.currentTimeMillis() - start)
+    }
+
+    /**
+     * nmap-style connect scan with per-port state — v5.2.0.
+     *
+     * State mapping (nmap connect-scan semantics):
+     *  - connected              → OPEN   (+ banner grab + latency)
+     *  - connection refused     → CLOSED (host up, service not listening)
+     *  - timeout / unreachable  → FILTERED (firewall drop / no route)
+     * Blocking; call off the UI thread.
+     */
+    fun scanDetailed(
+        host: String,
+        ports: List<Int>,
+        timeoutMs: Int,
+        onProgress: ((Int, Int) -> Unit)? = null,
+        grabBanners: Boolean = true,
+        cancel: () -> Boolean = { false }
+    ): PortScanDetailed {
+        val start = System.currentTimeMillis()
+        val done = AtomicInteger()
+        val next = AtomicInteger(0)
+        val results = Collections.synchronizedList(mutableListOf<PortResult>())
+        var anyOpen = false
+        val threads = minOf(96, maxOf(16, ports.size))
+        val pool: ExecutorService = Executors.newFixedThreadPool(threads)
+        val latch = CountDownLatch(ports.size)
+        val total = ports.size
+
+        repeat(threads) {
+            pool.execute {
+                while (!Thread.currentThread().isInterrupted && !cancel()) {
+                    val idx = next.getAndIncrement()
+                    if (idx >= total) return@execute
+                    val port = ports[idx]
+                    val svc = service(port)
+                    try {
+                        Socket().use { s ->
+                            val t0 = System.currentTimeMillis()
+                            s.connect(InetSocketAddress(host, port), timeoutMs)
+                            val ms = (System.currentTimeMillis() - t0).toInt()
+                            anyOpen = true
+                            var banner: String? = null
+                            if (grabBanners) {
+                                banner = try { Fingerprinter.probe(host, port) } catch (ignored: Exception) { null }
+                            }
+                            results.add(
+                                PortResult(
+                                    port = port,
+                                    state = "OPEN",
+                                    service = svc,
+                                    banner = banner,
+                                    hint = ConnHints.hint(host, port),
+                                    risk = Fingerprinter.riskNote(port),
+                                    latencyMs = ms
+                                )
+                            )
+                        }
+                    } catch (e: ConnectException) {
+                        // refused (or e.g. ENETUNREACH — treated below via host-up hint)
+                        val msg = e.message?.lowercase() ?: ""
+                        if (msg.contains("refused")) {
+                            results.add(PortResult(port, "CLOSED", svc))
+                        } else {
+                            results.add(PortResult(port, "FILTERED", svc))
+                        }
+                    } catch (e: SocketTimeoutException) {
+                        results.add(PortResult(port, "FILTERED", svc))
+                    } catch (ignored: IOException) {
+                        // host unreachable, EHOSTUNREACH, ECONNRESET, network down…
+                        results.add(PortResult(port, "FILTERED", svc))
+                    } catch (ignored: Exception) {
+                        results.add(PortResult(port, "FILTERED", svc))
+                    } finally {
+                        val d = done.incrementAndGet()
+                        latch.countDown()
+                        onProgress?.invoke(d, total)
+                    }
+                }
+            }
+        }
+        try {
+            latch.await(180, TimeUnit.SECONDS)
+        } catch (ignored: InterruptedException) {
+        }
+        pool.shutdownNow()
+        return PortScanDetailed(
+            results = results.sortedWith(compareByDescending<PortResult> { it.state == "OPEN" }.thenBy { it.port }),
+            elapsedMs = System.currentTimeMillis() - start,
+            hostUp = anyOpen
+        )
     }
 }

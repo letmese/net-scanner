@@ -52,12 +52,69 @@ object NetUtils {
         }
     }
 
-    /** ICMP ping via system binary (works without root on Android). */
+    /**
+     * ICMP ping via system binary (works without root on Android).
+     */
     fun ping(host: String): Boolean = try {
         val p = Runtime.getRuntime().exec(arrayOf("ping", "-c", "1", "-W", "1", host))
         p.waitFor() == 0
     } catch (e: Exception) {
         false
+    }
+
+    /** Result of [sweepDeep]: alive IPs plus how each was discovered. */
+    class SweepResult {
+        val alive = mutableListOf<String>()
+        val via = mutableMapOf<String, String>() // ip → "ICMP" / "TCP 445" / …
+    }
+
+    /**
+     * Pro-grade host discovery — v5.2.0: parallel ICMP sweep with a
+     * TCP-connect fallback for hosts that drop ping (Windows firewall,
+     * stealthy IoT). ARP/neighbor table picks up the rest without traffic.
+     * 64-thread pool over the /24; blocking; call off the UI thread.
+     */
+    fun sweepDeep(prefix: String, onProgress: ((Int, Int) -> Unit)? = null): SweepResult {
+        val res = SweepResult()
+        val pool: ExecutorService = Executors.newFixedThreadPool(64)
+        val latch = CountDownLatch(254)
+        for (i in 1..254) {
+            val host = prefix + i
+            pool.execute {
+                try {
+                    if (ping(host)) {
+                        synchronized(res) {
+                            res.alive.add(host)
+                            res.via[host] = "ICMP"
+                        }
+                    } else {
+                        // ICMP blocked — try TCP fallback on fingerprint ports
+                        for (port in intArrayOf(445, 80, 22, 443, 3389, 8080, 62078)) {
+                            try {
+                                Socket().use { s ->
+                                    s.connect(InetSocketAddress(host, port), 300)
+                                }
+                                synchronized(res) {
+                                    res.alive.add(host)
+                                    res.via[host] = "TCP $port"
+                                }
+                                break
+                            } catch (ignored: Exception) {
+                            }
+                        }
+                    }
+                } finally {
+                    latch.countDown()
+                    onProgress?.invoke(254 - latch.count.toInt(), 254)
+                }
+            }
+        }
+        try {
+            latch.await(90, TimeUnit.SECONDS)
+        } catch (ignored: InterruptedException) {
+        }
+        pool.shutdownNow()
+        return res
     }
 
     /**

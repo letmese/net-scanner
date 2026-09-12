@@ -49,14 +49,17 @@ object ScanEngine {
         ctx: Context,
         prefix: String,
         onStage: (String) -> Unit = {},
-        onSweepProgress: (done: Int, total: Int, found: Int) -> Unit = { _, _, _ -> }
+        onSweepProgress: (done: Int, total: Int, found: Int) -> Unit = { _, _, _ -> },
+        onPortProgress: (done: Int, total: Int) -> Unit = { _, _ -> }
     ): List<Device> {
         AppLog.log("scan start $prefix")
         AppLog.cp(ctx, "scan_start")
 
-        val alive = NetUtils.sweep(prefix) { done, total ->
+        onStage("Sweeping subnet…")
+        val sweep = NetUtils.sweepDeep(prefix) { done, total ->
             onSweepProgress(done, total, 0)
         }
+        val alive = sweep.alive
         AppLog.log("sweep done, alive=${alive.size}")
         AppLog.cp(ctx, "sweep_done alive=${alive.size}")
 
@@ -92,6 +95,7 @@ object ScanEngine {
             d.mac = macs[ip]
             d.reachable = alive.contains(ip)
             d.isSelf = self != null && ip == self.ip
+            d.discoveredVia = sweep.via[ip] ?: if (macs.containsKey(ip)) "neighbor table" else null
             devices.add(d)
             try {
                 arr.put(
@@ -128,6 +132,7 @@ object ScanEngine {
         for (d in devices) if (d.mac == null) d.mac = extra[d.ip]
 
         onStage("Resolving hostnames…")
+        val nbNames = ConcurrentHashMap<String, String>()
         val hex = Executors.newFixedThreadPool(24)
         val hlatch = CountDownLatch(devices.size)
         for (d in devices) {
@@ -137,6 +142,7 @@ object ScanEngine {
                     val nb = NetUtils.netbiosNameSync(fd.ip)
                     if (!nb.isNullOrBlank()) {
                         fd.host = nb.trim()
+                        nbNames[fd.ip] = nb.trim()
                         AppLog.log("name(nb) ${fd.ip} = ${nb.trim()}")
                         return@execute
                     }
@@ -203,26 +209,100 @@ object ScanEngine {
         AppLog.log("building list, devices=${devices.size}")
         AppLog.cp(ctx, "ui_update_posted")
 
+        // ── v5.2.0 deep port scan: per-port OPEN/CLOSED/FILTERED + banners ──
+        onStage("Port scan + banners…")
+        val reachable = devices.filter { it.reachable }
+        if (reachable.isNotEmpty()) {
+            val totalPorts = reachable.size * PortScanner.TOP100.size
+            val donePorts = java.util.concurrent.atomic.AtomicInteger()
+            val ppool = Executors.newFixedThreadPool(8)
+            val platch = CountDownLatch(reachable.size)
+            for (d in reachable) {
+                val fd = d
+                ppool.execute {
+                    try {
+                        val res = PortScanner.scanDetailed(
+                            fd.ip, PortScanner.TOP100.toList(), 400,
+                            onProgress = { _, _ ->
+                                val n = donePorts.incrementAndGet()
+                                onPortProgress(n, totalPorts)
+                            }
+                        )
+                        fd.ports = res.results
+                    } catch (ignored: Exception) {
+                    } finally {
+                        platch.countDown()
+                    }
+                }
+            }
+            try { platch.await(240, TimeUnit.SECONDS) } catch (ignored: InterruptedException) {}
+            ppool.shutdownNow()
+            // carry legacy risk flags over from the detailed results
+            for (d in devices) {
+                d.ports?.let { ps ->
+                    if (ps.any { it.port == 23 && it.state == "OPEN" })
+                        d.risk = (d.risk?.let { "$it, " } ?: "") + "Telnet open"
+                    if (ps.any { it.port == 21 && it.state == "OPEN" })
+                        d.risk = (d.risk?.let { "$it, " } ?: "") + "FTP open"
+                    if (d.guess == null) {
+                        d.guess = guessDevice(
+                            ps.filter { it.state == "OPEN" }.joinToString(",") { it.port.toString() }
+                        )
+                    }
+                }
+            }
+            AppLog.cp(ctx, "portscan_done total=$totalPorts")
+        }
+
         // mDNS names (Chromecast, AirPlay, printers, smart home)
+        var mdnsNames: Map<String, String> = emptyMap()
         try {
-            val mdns = Mdns.resolve(ctx.applicationContext, 4000)
-            AppLog.log("mdns names=${mdns.size}")
+            mdnsNames = Mdns.resolve(ctx.applicationContext, 4000)
+            AppLog.log("mdns names=${mdnsNames.size}")
             for (d in devices) {
                 if (d.host == null) {
-                    mdns[d.ip]?.let { d.host = it }
+                    mdnsNames[d.ip]?.let { d.host = it }
                 }
             }
         } catch (ignored: Exception) {
         }
 
+        // ── v5.2.0 device/OS fingerprinting (nmap-class, root-free) ──
+        onStage("Fingerprinting devices…")
+        var ssdpByIp: Map<String, NetUtils.SsdpDevice> = emptyMap()
+        try {
+            ssdpByIp = NetUtils.ssdpDiscover().mapNotNull { s ->
+                val hp = s.location.substringAfter("//").substringBefore(':').substringBefore('/')
+                if (Regex("^\\d{1,3}(\\.\\d{1,3}){3}$").matches(hp)) hp to s else null
+            }.toMap()
+            AppLog.log("ssdp devices=${ssdpByIp.size}")
+        } catch (ignored: Exception) {
+        }
+        for (d in devices) {
+            d.vendor = VendorDb.vendor(d.mac)
+            d.randomMac = VendorDb.isRandomized(d.mac)
+            d.macHidden = d.reachable && d.mac == null
+            d.fingerprint = DeviceFingerprint.classify(
+                d.ip, d.host, d.mac, d.isSelf, d.ports ?: emptyList(),
+                mdnsNames[d.ip], ssdpByIp[d.ip], nbNames[d.ip]
+            )
+        }
+
         // persist CSV for the export card
         try {
-            val csv = StringBuilder("ip,hostname,mac,type,reachable\n")
+            val csv = StringBuilder("ip,hostname,mac,type,vendor,os,kind,open_ports,reachable\n")
             for (d in devices) {
+                val os = d.fingerprint?.osLabel ?: ""
+                val kind = d.fingerprint?.kindLabel ?: ""
+                val ops = d.openPorts().joinToString(";") { "${it.port}/${it.service}" }
                 csv.append(d.ip).append(',')
                     .append('"').append(d.host?.replace("\"", "'") ?: "").append('"').append(',')
                     .append('"').append(d.mac ?: "").append('"').append(',')
                     .append('"').append(DeviceTypes.label(d)).append('"').append(',')
+                    .append('"').append(d.vendor ?: "").append('"').append(',')
+                    .append('"').append(os).append('"').append(',')
+                    .append('"').append(kind).append('"').append(',')
+                    .append('"').append(ops).append('"').append(',')
                     .append(d.reachable).append('\n')
             }
             Stores.saveLastScanCsv(ctx, csv.toString())

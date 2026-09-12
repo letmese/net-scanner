@@ -34,11 +34,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.netscanner.core.Device
 import com.netscanner.core.DeviceTypes
+import com.netscanner.core.PortResult
 import com.netscanner.core.PortScanner
 import com.netscanner.core.ScanEngine
 import com.netscanner.core.Stores
@@ -53,7 +56,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** LAN scanner (port of ScanActivity). */
+/** LAN scanner — v5.2.0: nmap-class scan, fingerprints, per-port results. */
 @Composable
 fun ScanScreen(nav: Navigator) {
     val p = LocalGlassPalette.current
@@ -65,6 +68,7 @@ fun ScanScreen(nav: Navigator) {
     var done by remember { mutableStateOf(0) }
     var total by remember { mutableStateOf(254) }
     var devices by remember { mutableStateOf<List<Device>>(emptyList()) }
+    var expanded by remember { mutableStateOf<String?>(null) }
 
     fun shareCsv() {
         val csv = Stores.lastScanCsv(ctx)
@@ -81,18 +85,24 @@ fun ScanScreen(nav: Navigator) {
         if (scanning) return
         scanning = true
         devices = emptyList()
+        expanded = null
         stage = "Sweeping…"
         done = 0
+        total = 254
         scope.launch {
             val list = withContext(Dispatchers.IO) {
                 val self = NetUtils.localNet()
                     ?: return@withContext emptyList<Device>()
-                ScanEngine.scan(ctx, self.prefix, { s -> stage = s }, { d, t, _ ->
-                    done = d; total = t
-                })
+                ScanEngine.scan(
+                    ctx, self.prefix,
+                    { s -> stage = s },
+                    { d, t, _ -> done = d; total = t },
+                    { d, t -> done = d; total = t }
+                )
             }
             devices = list
-            stage = if (list.isEmpty()) "No devices found" else "${list.size} devices found"
+            stage = if (list.isEmpty()) "No devices found"
+            else "${list.size} devices · ${list.count { it.openPorts().isNotEmpty() }} with open ports"
             scanning = false
         }
     }
@@ -101,7 +111,7 @@ fun ScanScreen(nav: Navigator) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
             LiquidGlassCard {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(stage, color = p.text, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                    Text(stage, color = p.text, fontSize = 14.sp, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(
                         "$done/$total",
                         color = p.accent,
@@ -121,7 +131,7 @@ fun ScanScreen(nav: Navigator) {
                     Box(
                         Modifier
                             .fillMaxHeight()
-                            .fillMaxWidth(done / total.toFloat())
+                            .fillMaxWidth(if (total == 0) 0f else done / total.toFloat())
                             .clip(RoundedCornerShape(3.dp))
                             .background(
                                 Brush.horizontalGradient(
@@ -152,44 +162,90 @@ fun ScanScreen(nav: Navigator) {
             Spacer(Modifier.height(12.dp))
 
             devices.forEach { d ->
+                val isOpen = expanded == d.ip
                 LiquidGlassCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(bottom = 10.dp)
-                        .clickable { nav.push(Route.PortScan(d.ip, d.mac)) },
+                        .clickable { expanded = if (isOpen) null else d.ip },
                     cornerRadius = 18.dp
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            Modifier
-                                .clip(RoundedCornerShape(14.dp))
-                                .padding(4.dp)
-                        ) { Text(DeviceTypes.emoji(d), fontSize = 22.sp) }
+                        Text(
+                            d.fingerprint?.icon ?: DeviceTypes.emoji(d),
+                            fontSize = 22.sp
+                        )
                         Spacer(Modifier.height(0.dp))
-                        Column(Modifier.weight(1f)) {
+                        Column(Modifier.weight(1f).padding(start = 8.dp)) {
                             Text(
                                 d.host ?: DeviceTypes.label(d),
                                 color = p.text,
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.SemiBold,
-                                maxLines = 1
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
+                            val kindLine = buildString {
+                                d.fingerprint?.kindLabel?.takeIf { it.isNotBlank() }?.let {
+                                    append(it)
+                                    d.fingerprint?.osLabel?.takeIf { o -> o.isNotBlank() }
+                                        ?.let { o -> append(" · ").append(o) }
+                                } ?: append(DeviceTypes.label(d))
+                            }
+                            if (kindLine.isNotBlank()) {
+                                Text(kindLine, color = p.dim, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
                             Text(
-                                d.ip + (d.mac?.let { "  ·  $it" } ?: "") + "  ·  " + DeviceTypes.label(d),
+                                d.ip + macLine(d),
                                 color = p.dim,
-                                fontSize = 12.sp,
-                                maxLines = 1
+                                fontSize = 11.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                         if (d.isSelf) GlassChip { Text("you", color = p.accent, fontSize = 11.sp) }
+                        else if (d.openPorts().isNotEmpty())
+                            GlassChip { Text("${d.openPorts().size} open", color = p.accent, fontSize = 11.sp) }
                     }
                     if (d.guess != null || d.risk != null) {
                         Spacer(Modifier.height(6.dp))
                         Text(
                             listOfNotNull(d.guess, d.risk).joinToString("  ·  "),
                             color = if (d.risk != null) p.warn else p.dim,
-                            fontSize = 12.sp
+                            fontSize = 12.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
+                    }
+
+                    // ── expanded: nmap-style per-port detail ──
+                    if (isOpen) {
+                        Spacer(Modifier.height(10.dp))
+                        val open = d.openPorts()
+                        if (open.isEmpty()) {
+                            Text(
+                                if (d.ports == null) "No port data — run a scan"
+                                else "No open ports in top-100" + statsLine(d.ports!!),
+                                color = p.dim, fontSize = 12.sp
+                            )
+                        } else {
+                            open.forEach { pr -> PortRow(pr) ; Spacer(Modifier.height(6.dp)) }
+                            val s = statsLine(d.ports)
+                            if (s.isNotEmpty()) {
+                                Text(s, color = p.faint, fontSize = 11.sp)
+                                Spacer(Modifier.height(6.dp))
+                            }
+                        }
+                        d.fingerprint?.reasons?.takeIf { it.isNotEmpty() }?.let { rs ->
+                            Text("Signals: " + rs.joinToString(" · "), color = p.faint, fontSize = 11.sp)
+                            Spacer(Modifier.height(8.dp))
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(
+                                onClick = { nav.push(Route.PortScan(d.ip, d.mac)) },
+                                shape = RoundedCornerShape(12.dp)
+                            ) { Text("Full port scan →", color = p.text, fontSize = 12.sp) }
+                        }
                     }
                 }
             }
@@ -198,14 +254,82 @@ fun ScanScreen(nav: Navigator) {
     }
 }
 
-/** Per-device port scanner (port of DevicePortActivity). */
+private fun macLine(d: Device): String = when {
+    d.mac != null -> {
+        val v = d.vendor
+        val rnd = if (d.randomMac) " · randomized" else ""
+        if (v != null) "  ·  ${d.mac} · $v$rnd" else "  ·  ${d.mac}$rnd"
+    }
+    d.macHidden -> "  ·  MAC hidden (Android 10+)"
+    else -> ""
+}
+
+private fun statsLine(ports: List<PortResult>?): String {
+    if (ports == null) return ""
+    val closed = ports.count { it.state == "CLOSED" }
+    val filtered = ports.count { it.state == "FILTERED" }
+    val parts = mutableListOf<String>()
+    if (closed > 0) parts.add("$closed closed")
+    if (filtered > 0) parts.add("$filtered filtered")
+    return if (parts.isEmpty()) "" else "  ·  " + parts.joinToString(" · ")
+}
+
+/** One open-port row: port/service, banner, how-to-connect hint, risk. */
+@Composable
+private fun PortRow(pr: PortResult) {
+    val p = LocalGlassPalette.current
+    Column(Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "${pr.port} ${pr.service}",
+                color = p.text,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                pr.state,
+                color = when (pr.state) {
+                    "OPEN" -> p.accent
+                    "CLOSED" -> p.dim
+                    else -> p.warn
+                },
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold
+            )
+            if (pr.latencyMs >= 0) {
+                Text("  ${pr.latencyMs}ms", color = p.faint, fontSize = 10.sp)
+            }
+        }
+        pr.banner?.let { b ->
+            Text(
+                b, color = p.dim, fontSize = 11.sp,
+                maxLines = 2, overflow = TextOverflow.Ellipsis
+            )
+        }
+        pr.hint?.let { h ->
+            Text(
+                "→ $h", color = p.accent, fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 1, overflow = TextOverflow.Ellipsis
+            )
+        }
+        pr.risk?.let { r ->
+            Text("⚠ $r", color = p.warn, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+/** Per-device port scanner — v5.2.0: per-port state + banners + hints. */
 @Composable
 fun PortScanScreen(nav: Navigator, ip: String, mac: String?) {
     val p = LocalGlassPalette.current
     var scanning by remember { mutableStateOf(false) }
     var progress by remember { mutableStateOf(0f) }
     var elapsed by remember { mutableStateOf(0L) }
-    var open by remember { mutableStateOf<List<Int>>(emptyList()) }
+    var results by remember { mutableStateOf<List<PortResult>>(emptyList()) }
     var customA by remember { mutableStateOf("") }
     var customB by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
@@ -213,18 +337,17 @@ fun PortScanScreen(nav: Navigator, ip: String, mac: String?) {
     fun runPreset(ports: List<Int>, timeout: Int) {
         if (scanning) return
         scanning = true
-        open = emptyList()
+        results = emptyList()
         progress = 0f
         scope.launch {
-            val (found, ms) = withContext(Dispatchers.IO) {
-                PortScanner.scan(
+            val detailed = withContext(Dispatchers.IO) {
+                PortScanner.scanDetailed(
                     ip, ports, timeout,
-                    onProgress = { d, t -> progress = d / t.toFloat() },
-                    onOpen = { }
+                    onProgress = { d, t -> progress = d / t.toFloat() }
                 )
             }
-            open = found
-            elapsed = ms
+            results = detailed.results
+            elapsed = detailed.elapsedMs
             scanning = false
         }
     }
@@ -277,29 +400,19 @@ fun PortScanScreen(nav: Navigator, ip: String, mac: String?) {
                     )
                 } else if (elapsed > 0) {
                     Spacer(Modifier.height(10.dp))
+                    val o = results.count { it.state == "OPEN" }
+                    val c = results.count { it.state == "CLOSED" }
+                    val f = results.count { it.state == "FILTERED" }
                     Text(
-                        "${open.size} open · ${(elapsed / 1000.0).format1()}s",
+                        "$o open · $c closed · $f filtered · ${(elapsed / 1000.0).format1()}s",
                         color = p.dim, fontSize = 12.sp
                     )
                 }
             }
             Spacer(Modifier.height(12.dp))
-            if (open.isNotEmpty()) {
+            if (results.isNotEmpty()) {
                 LiquidGlassCard(cornerRadius = 18.dp) {
-                    open.chunked(3).forEach { rowPorts ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            rowPorts.forEach { port ->
-                                GlassChip(Modifier.weight(1f)) {
-                                    Text(
-                                        "$port ${PortScanner.service(port)}",
-                                        color = p.text, fontSize = 11.sp, maxLines = 1
-                                    )
-                                }
-                            }
-                            repeat(3 - rowPorts.size) { Spacer(Modifier.weight(1f)) }
-                        }
-                        Spacer(Modifier.height(6.dp))
-                    }
+                    results.forEach { pr -> PortRow(pr); Spacer(Modifier.height(6.dp)) }
                 }
                 Spacer(Modifier.height(8.dp))
             }

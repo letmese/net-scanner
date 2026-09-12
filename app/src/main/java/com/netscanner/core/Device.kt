@@ -1,17 +1,33 @@
 package com.netscanner.core
 
-/** A discovered host on the LAN. Port of legacy Device/DeviceTypes/VendorDb. */
+/**
+ * A discovered host on the LAN. Port of legacy Device/DeviceTypes/VendorDb.
+ * v5.2.0: extended with per-port deep-scan results, OUI vendor, randomized/
+ * private-MAC detection and the nmap-class fingerprint verdict
+ * (see DeviceFingerprint.kt). All new fields are optional/var so every
+ * existing consumer keeps compiling and behaving unchanged.
+ */
 
 data class Device(
     val ip: String,
-    var mac: String? = null,      // may be null
-    var host: String? = null,     // hostname (resolved)
+    var mac: String? = null,      // may be null (Android 10+ ARP restriction)
+    var host: String? = null,     // hostname (NetBIOS → DNS → HTTP title)
     var isSelf: Boolean = false,
     var reachable: Boolean = false,
     var risk: String? = null,     // e.g. "Telnet open"
-    var guess: String? = null     // e.g. "likely IP camera"
+    var guess: String? = null,    // e.g. "likely IP camera"
+    // ── v5.2.0 deep scan fields ──
+    var ports: List<PortResult>? = null,   // per-port OPEN/CLOSED/FILTERED + banners
+    var vendor: String? = null,            // OUI manufacturer
+    var randomMac: Boolean = false,        // locally-administered / randomized MAC
+    var macHidden: Boolean = false,        // alive but MAC unreadable (SELinux)
+    var discoveredVia: String? = null,     // "ICMP" / "TCP 445" / "neighbor table"
+    var fingerprint: Fingerprint? = null   // device kind + OS guess + confidence
 ) {
     fun lastOctet(): String = ip.substring(ip.lastIndexOf('.') + 1)
+
+    fun openPorts(): List<PortResult> =
+        ports?.filter { it.state == "OPEN" } ?: emptyList()
 }
 
 object VendorDb {
@@ -44,6 +60,7 @@ object VendorDb {
         "F0:9F:C2" to "Huawei", "28:6E:D4" to "Huawei", "34:6F:24" to "Huawei",
         "78:1D:BA" to "Huawei", "C8:0C:C8" to "Huawei",
         "88:66:A5" to "Technicolor", "00:03:E8" to "Technicolor",
+        "C8:3A:35" to "Tenda", "50:2B:73" to "Tenda",
         // Phones / tablets
         "38:C9:86" to "Samsung", "40:0E:85" to "Samsung", "50:85:69" to "Samsung",
         "84:38:35" to "Samsung", "A8:06:00" to "Samsung", "F4:7B:5E" to "Samsung",
@@ -51,15 +68,21 @@ object VendorDb {
         "78:02:F8" to "Xiaomi", "AC:C1:EE" to "Xiaomi", "EC:D0:9F" to "Xiaomi",
         "F8:A4:5F" to "Xiaomi", "50:2B:73" to "Oppo", "C0:11:73" to "Oppo",
         "08:FC:88" to "OnePlus", "48:BF:6B" to "OnePlus", "64:A2:F9" to "OnePlus",
-        "30:FD:B2" to "Vivo", "3C:5A:B4" to "Google", "54:60:09" to "Honor",
+        "30:FD:B2" to "Vivo", "3C:5A:B4" to "Google", "54:60:09" to "Google",
         "20:82:C0" to "Motorola", "44:23:07" to "Intel", "98:FA:E8" to "Intel",
         "A0:AF:BD" to "Intel", "D4:6A:6A" to "Intel", "84:16:F9" to "TP-Link",
         "3C:97:0E" to "Wistron", "24:69:68" to "AzureWave", "00:1D:7E" to "Cisco",
         "58:97:1E" to "Cisco", "F8:66:F2" to "Cisco", "00:25:45" to "Cisco",
+        // Printers
+        "00:80:77" to "Brother", "00:00:48" to "Seiko Epson", "00:1E:0B" to "HP",
+        "00:80:92" to "ACKSYS", "00:1B:A9" to "Brother",
+        // NAS
+        "00:11:32" to "Synology", "24:5E:BE" to "QNAP", "00:D0:B8" to "IAI/NTT",
         // IoT
         "24:0A:C4" to "Espressif", "5C:CF:7F" to "Espressif", "30:AE:A4" to "Espressif",
-        "BC:DD:C2" to "Espressif", "68:C6:3A" to "Espressif", "B4:E6:2D" to "Tuya",
-        "10:D5:61" to "Realtek", "00:E0:4C" to "Realtek", "52:54:AB" to "Realtek"
+        "BC:DD:C2" to "Espressif", "68:C6:3A" to "Espressif", "84:F3:EB" to "Espressif",
+        "B4:E6:2D" to "Tuya", "7C:DF:A1" to "Tuya", "10:D5:61" to "Realtek",
+        "00:E0:4C" to "Realtek", "52:54:AB" to "Realtek", "D8:F0:9C" to "Espressif"
     )
 
     /** Vendor for a MAC, or null. Key = first 3 octets uppercase. */
@@ -67,11 +90,25 @@ object VendorDb {
         if (mac == null || mac.length < 8) return null
         return OUI[mac.substring(0, 8).uppercase()]
     }
+
+    /**
+     * Randomized/private MAC detection: the locally-administered bit (bit 1
+     * of the first octet, i.e. second hex digit in {2,6,A,E}) is set AND the
+     * prefix is not a registered OUI. Known-oui locally-administered ranges
+     * (e.g. QEMU's 52:54:00) are therefore not flagged.
+     */
+    fun isRandomized(mac: String?): Boolean {
+        if (mac.isNullOrBlank() || mac.length < 2) return false
+        val first = mac.substring(0, 2).toIntOrNull(16) ?: return false
+        if (first and 0x02 == 0) return false
+        return vendor(mac) == null
+    }
 }
 
 object DeviceTypes {
-    /** Device type guessing from vendor + hostname. Returns an emoji + label. */
+    /** Device type: fingerprint verdict first, legacy heuristics as fallback. */
     fun emoji(d: Device): String {
+        d.fingerprint?.let { return it.icon }
         if (d.isSelf) return "📱"
         var v = VendorDb.vendor(d.mac)
         if (v == null && d.host != null) v = d.host
@@ -97,6 +134,7 @@ object DeviceTypes {
 
     fun label(d: Device): String {
         if (d.isSelf) return "This phone"
+        d.fingerprint?.let { if (it.kindLabel.isNotBlank()) return it.kindLabel }
         val v = VendorDb.vendor(d.mac)
         if (v != null) return v
         if (d.host != null) return d.host!!
