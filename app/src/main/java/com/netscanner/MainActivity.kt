@@ -23,6 +23,7 @@ import com.netscanner.ui.screens.HomeScreen
 import com.netscanner.ui.screens.LocalPortsScreen
 import com.netscanner.ui.screens.LogsScreen
 import com.netscanner.ui.screens.MultiPingScreen
+import com.netscanner.ui.screens.OoklaSpeedScreen
 import com.netscanner.ui.screens.NetDiagScreen
 import com.netscanner.ui.screens.PingMonitorScreen
 import com.netscanner.ui.screens.PortScanScreen
@@ -65,7 +66,7 @@ class MainActivity : ComponentActivity() {
                         Route.MultiPing -> MultiPingScreen(nav)
                         Route.PingMonitor -> PingMonitorScreen(nav)
                         Route.AutoSpeed -> AutoSpeedScreen(nav)
-                        Route.SpeedTest -> ToolRunScreen(nav, "speed")
+                        Route.SpeedTest -> OoklaSpeedScreen(nav)
                         Route.SpeedHistory -> SpeedHistoryScreen(nav)
                         Route.Usage -> UsageScreen(nav)
                         Route.Connections -> ConnectionsScreen(nav)

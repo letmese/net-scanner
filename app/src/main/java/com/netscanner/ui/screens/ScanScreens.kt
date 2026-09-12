@@ -44,6 +44,7 @@ import com.netscanner.core.DeviceTypes
 import com.netscanner.core.PortResult
 import com.netscanner.core.PortScanner
 import com.netscanner.core.ScanEngine
+import com.netscanner.core.ScanState
 import com.netscanner.core.Stores
 import com.netscanner.core.NetUtils
 import com.netscanner.nav.Navigator
@@ -56,19 +57,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** LAN scanner — v5.2.0: nmap-class scan, fingerprints, per-port results. */
+/** LAN scanner — v5.3.0: state lives in [ScanState] singleton so results survive navigation/back. */
 @Composable
 fun ScanScreen(nav: Navigator) {
     val p = LocalGlassPalette.current
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
-
-    var scanning by remember { mutableStateOf(false) }
-    var stage by remember { mutableStateOf("Ready") }
-    var done by remember { mutableStateOf(0) }
-    var total by remember { mutableStateOf(254) }
-    var devices by remember { mutableStateOf<List<Device>>(emptyList()) }
-    var expanded by remember { mutableStateOf<String?>(null) }
+    val st = ScanState
 
     fun shareCsv() {
         val csv = Stores.lastScanCsv(ctx)
@@ -82,28 +77,24 @@ fun ScanScreen(nav: Navigator) {
     }
 
     fun startScan() {
-        if (scanning) return
-        scanning = true
-        devices = emptyList()
-        expanded = null
-        stage = "Sweeping…"
-        done = 0
-        total = 254
+        if (st.scanning) return
+        st.scanning = true
+        st.reset()
         scope.launch {
             val list = withContext(Dispatchers.IO) {
                 val self = NetUtils.localNet()
                     ?: return@withContext emptyList<Device>()
                 ScanEngine.scan(
                     ctx, self.prefix,
-                    { s -> stage = s },
-                    { d, t, _ -> done = d; total = t },
-                    { d, t -> done = d; total = t }
+                    { s -> st.stage = s },
+                    { d, t, _ -> st.done = d; st.total = t },
+                    { d, t -> st.done = d; st.total = t }
                 )
             }
-            devices = list
-            stage = if (list.isEmpty()) "No devices found"
+            st.devices = list
+            st.stage = if (list.isEmpty()) "No devices found"
             else "${list.size} devices · ${list.count { it.openPorts().isNotEmpty() }} with open ports"
-            scanning = false
+            st.scanning = false
         }
     }
 
@@ -111,9 +102,9 @@ fun ScanScreen(nav: Navigator) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
             LiquidGlassCard {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(stage, color = p.text, fontSize = 14.sp, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(st.stage, color = p.text, fontSize = 14.sp, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(
-                        "$done/$total",
+                        "${st.done}/${st.total}",
                         color = p.accent,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold
@@ -131,7 +122,7 @@ fun ScanScreen(nav: Navigator) {
                     Box(
                         Modifier
                             .fillMaxHeight()
-                            .fillMaxWidth(if (total == 0) 0f else done / total.toFloat())
+                            .fillMaxWidth(if (st.total == 0) 0f else st.done / st.total.toFloat())
                             .clip(RoundedCornerShape(3.dp))
                             .background(
                                 Brush.horizontalGradient(
@@ -144,30 +135,30 @@ fun ScanScreen(nav: Navigator) {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Button(
                         onClick = { startScan() },
-                        enabled = !scanning,
+                        enabled = !st.scanning,
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = p.accent.copy(alpha = 0.85f),
                             contentColor = androidx.compose.ui.graphics.Color(0xFF04222A)
                         ),
                         shape = RoundedCornerShape(14.dp)
-                    ) { Text(if (scanning) "Scanning…" else "Start scan", fontWeight = FontWeight.SemiBold) }
+                    ) { Text(if (st.scanning) "Scanning…" else "Start scan", fontWeight = FontWeight.SemiBold) }
                     OutlinedButton(
                         onClick = { shareCsv() },
-                        enabled = devices.isNotEmpty(),
+                        enabled = st.devices.isNotEmpty(),
                         shape = RoundedCornerShape(14.dp)
                     ) { Text("Export CSV", color = p.text) }
                 }
             }
             Spacer(Modifier.height(12.dp))
 
-            devices.forEach { d ->
-                val isOpen = expanded == d.ip
+            st.devices.forEach { d ->
+                val isOpen = st.expanded == d.ip
                 LiquidGlassCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(bottom = 10.dp)
-                        .clickable { expanded = if (isOpen) null else d.ip },
+                        .clickable { st.expanded = if (isOpen) null else d.ip },
                     cornerRadius = 18.dp
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -322,33 +313,30 @@ private fun PortRow(pr: PortResult) {
     }
 }
 
-/** Per-device port scanner — v5.2.0: per-port state + banners + hints. */
+/** Per-device port scanner — v5.3.0: progress/results live in [ScanState] so they survive back-navigation. */
 @Composable
 fun PortScanScreen(nav: Navigator, ip: String, mac: String?) {
     val p = LocalGlassPalette.current
-    var scanning by remember { mutableStateOf(false) }
-    var progress by remember { mutableStateOf(0f) }
-    var elapsed by remember { mutableStateOf(0L) }
-    var results by remember { mutableStateOf<List<PortResult>>(emptyList()) }
+    val st = remember(ip) { ScanState.portScan(ip) }
     var customA by remember { mutableStateOf("") }
     var customB by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
 
     fun runPreset(ports: List<Int>, timeout: Int) {
-        if (scanning) return
-        scanning = true
-        results = emptyList()
-        progress = 0f
+        if (st.scanning) return
+        st.scanning = true
+        st.results = emptyList()
+        st.progress = 0f
         scope.launch {
             val detailed = withContext(Dispatchers.IO) {
                 PortScanner.scanDetailed(
                     ip, ports, timeout,
-                    onProgress = { d, t -> progress = d / t.toFloat() }
+                    onProgress = { d, t -> st.progress = d / t.toFloat() }
                 )
             }
-            results = detailed.results
-            elapsed = detailed.elapsedMs
-            scanning = false
+            st.results = detailed.results
+            st.elapsed = detailed.elapsedMs
+            st.scanning = false
         }
     }
 
@@ -384,7 +372,7 @@ fun PortScanScreen(nav: Navigator, ip: String, mac: String?) {
                     SmallField(customB, "end", Modifier.weight(1f)) { customB = it }
                     Button(
                         onClick = { runCustom() },
-                        enabled = !scanning,
+                        enabled = !st.scanning,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = p.accent.copy(alpha = 0.85f),
                             contentColor = androidx.compose.ui.graphics.Color(0xFF04222A)
@@ -392,27 +380,27 @@ fun PortScanScreen(nav: Navigator, ip: String, mac: String?) {
                         shape = RoundedCornerShape(12.dp)
                     ) { Text("Go") }
                 }
-                if (scanning) {
+                if (st.scanning) {
                     Spacer(Modifier.height(10.dp))
                     Text(
-                        "Scanning… ${(progress * 100).toInt()}%",
+                        "Scanning… ${(st.progress * 100).toInt()}%",
                         color = p.accent, fontSize = 12.sp
                     )
-                } else if (elapsed > 0) {
+                } else if (st.elapsed > 0) {
                     Spacer(Modifier.height(10.dp))
-                    val o = results.count { it.state == "OPEN" }
-                    val c = results.count { it.state == "CLOSED" }
-                    val f = results.count { it.state == "FILTERED" }
+                    val o = st.results.count { it.state == "OPEN" }
+                    val c = st.results.count { it.state == "CLOSED" }
+                    val f = st.results.count { it.state == "FILTERED" }
                     Text(
-                        "$o open · $c closed · $f filtered · ${(elapsed / 1000.0).format1()}s",
+                        "$o open · $c closed · $f filtered · ${(st.elapsed / 1000.0).format1()}s",
                         color = p.dim, fontSize = 12.sp
                     )
                 }
             }
             Spacer(Modifier.height(12.dp))
-            if (results.isNotEmpty()) {
+            if (st.results.isNotEmpty()) {
                 LiquidGlassCard(cornerRadius = 18.dp) {
-                    results.forEach { pr -> PortRow(pr); Spacer(Modifier.height(6.dp)) }
+                    st.results.forEach { pr -> PortRow(pr); Spacer(Modifier.height(6.dp)) }
                 }
                 Spacer(Modifier.height(8.dp))
             }
