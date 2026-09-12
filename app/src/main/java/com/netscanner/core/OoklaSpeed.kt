@@ -36,10 +36,30 @@ import javax.net.ssl.HttpsURLConnection
 object OoklaSpeed {
 
     private const val UA = "Mozilla/5.0 (Linux; Android 16) NetScanner/5.3"
-    private const val PROBE_HOST = "speed.cloudflare.com"
-    private const val PROBE_PORT = 443
-    private const val DL_URL = "https://speed.cloudflare.com/__down?bytes=100000000"
-    private const val UP_URL = "https://speed.cloudflare.com/__up"
+
+    /** Idle-latency probe candidates (v5.3.2): first reachable target wins,
+     *  so a blocked/unreachable Cloudflare edge no longer kills the test. */
+    private val PING_TARGETS = listOf(
+        "speed.cloudflare.com" to 443,
+        "1.1.1.1" to 443,       // Cloudflare DNS — raw IP, no DNS lookup needed
+        "223.5.5.5" to 443,     // AliDNS — reachable on networks where CF is not
+        "8.8.8.8" to 53
+    )
+
+    /** Download endpoint candidates, tried in order after a liveness probe. */
+    private val DL_ENDPOINTS = listOf(
+        "https://speed.cloudflare.com/__down?bytes=100000000",
+        "https://proof.ovh.net/files/10Gb.dat"
+    )
+
+    /** Upload endpoint candidates, tried in order after a liveness probe.
+     *  NOTE: speed.cloudflare.com/__up returns 403 unless an Origin header
+     *  for https://speed.cloudflare.com is present — probe/measure set it. */
+    private val UL_ENDPOINTS = listOf(
+        "https://speed.cloudflare.com/__up",
+        "http://speedtest.tele2.net/upload.php"
+    )
+
     private const val HIST_FILE = "speed_history.json"
 
     // ── live UI state ──
@@ -109,22 +129,33 @@ object OoklaSpeed {
         try {
             resetLive()
 
-            // 1) idle latency / jitter / loss
+            // 1) idle latency / jitter / loss (v5.3.2: first reachable probe
+            //    target wins; a dead Cloudflare edge rotates to 1.1.1.1 etc.)
             phase = "ping"
             status = "Measuring idle latency…"
             val rtts = mutableListOf<Int>()
             var fails = 0
+            var probeIdx = 0
             repeat(12) {
                 if (cancelled) return
-                val r = tcpPing(PROBE_HOST, PROBE_PORT, 1200)
-                if (r == null) fails++ else rtts.add(r)
+                val target = PING_TARGETS[probeIdx % PING_TARGETS.size]
+                val r = tcpPing(target.first, target.second, 1200)
+                if (r == null) {
+                    fails++
+                    probeIdx++   // rotate to the next candidate target
+                } else {
+                    rtts.add(r)  // keep this target for loaded-latency probing
+                }
                 try { Thread.sleep(120) } catch (e: InterruptedException) { return }
             }
             if (rtts.isEmpty()) {
-                err = "No latency samples — offline, or DNS Sniffer VPN is ON?"
+                err = "No latency samples from any of " +
+                    PING_TARGETS.joinToString(", ") { it.first } +
+                    " — offline, or DNS Sniffer VPN is ON?"
                 phase = "error"
                 return
             }
+            val probeTarget = PING_TARGETS[probeIdx % PING_TARGETS.size]
             idlePing = rtts.average().toFloat()
             jitter = jitterOf(rtts)
             loss = fails * 100f / (fails + rtts.size)
@@ -132,19 +163,37 @@ object OoklaSpeed {
             // 2) connection metadata (best-effort, non-fatal)
             if (!cancelled) fetchConnectionInfo()
 
-            // 3) download phase + loaded latency
+            // 3) download phase + loaded latency (v5.3.2: endpoint probe +
+            //    fallback chain; failures surface in err/done status, never silent)
+            val dlErr = StringBuilder()
+            val ulErr = StringBuilder()
+            var down = 0.0
+            var up = 0.0
+
             phase = "download"
             status = "Download test…"
             val dlLoaded = mutableListOf<Int>()
-            val down = throughputPhase(download = true, loadedSink = dlLoaded)
+            val dlEp = pickEndpoint(download = true, errSink = dlErr)
+            if (dlEp != null) {
+                down = throughputPhase(
+                    download = true, loadedSink = dlLoaded,
+                    probe = probeTarget, endpoint = dlEp, errSink = dlErr
+                )
+            }
             if (cancelled) return
             loadedDown = if (dlLoaded.size >= 3) dlLoaded.average().toFloat() else null
 
-            // 4) upload phase + loaded latency
+            // 4) upload phase + loaded latency (same fallback treatment)
             phase = "upload"
             status = "Upload test…"
             val ulLoaded = mutableListOf<Int>()
-            val up = throughputPhase(download = false, loadedSink = ulLoaded)
+            val ulEp = pickEndpoint(download = false, errSink = ulErr)
+            if (ulEp != null) {
+                up = throughputPhase(
+                    download = false, loadedSink = ulLoaded,
+                    probe = probeTarget, endpoint = ulEp, errSink = ulErr
+                )
+            }
             if (cancelled) return
             loadedUp = if (ulLoaded.size >= 3) ulLoaded.average().toFloat() else null
 
@@ -154,13 +203,29 @@ object OoklaSpeed {
                 .maxOrNull()
                 ?.let { bloatGrade(it - idle) }
 
+            // v5.3.2: any failed direction is VISIBLE — both dead = error state,
+            // one dead = done with the failure appended to the result line.
+            val failed = mutableListOf<String>()
+            if (dlErr.isNotEmpty()) failed.add("download ($dlErr)")
+            if (ulErr.isNotEmpty()) failed.add("upload ($ulErr)")
+            if (down == 0.0 && up == 0.0 && failed.isNotEmpty()) {
+                err = failed.joinToString(" · ")
+                phase = "error"
+                return
+            }
+
             phase = "done"
-            status = String.format(
-                "%.1f ↓ / %.1f ↑ Mbps · %d ms idle · jitter %s · grade %s",
-                down, up, (idlePing ?: 0f).toInt(),
-                jitter?.let { String.format("%.1f ms", it) } ?: "n/a",
-                grade ?: "n/a"
-            )
+            status = buildString {
+                append(
+                    String.format(
+                        "%.1f ↓ / %.1f ↑ Mbps · %d ms idle · jitter %s · grade %s",
+                        down, up, (idlePing ?: 0f).toInt(),
+                        jitter?.let { String.format("%.1f ms", it) } ?: "n/a",
+                        grade ?: "n/a"
+                    )
+                )
+                if (failed.isNotEmpty()) append(" · FAILED ").append(failed.joinToString(" / "))
+            }
             saveResult(ctx, down, up)
         } catch (e: InterruptedException) {
             // user cancelled — leave state as cancel() left it
@@ -191,12 +256,71 @@ object OoklaSpeed {
         serverCity = null
     }
 
+    /** Short host label for endpoint URLs (error lines / probe status). */
+    private fun hostOf(ep: String): String = try { URL(ep).host } catch (e: Exception) { ep }
+
     /**
-     * Multi-stream throughput against Cloudflare with a ~5 Hz sampler feeding
-     * the gauge/graph and a parallel prober recording loaded latency.
+     * v5.3.2 liveness probe + fallback selection: try each candidate with a
+     * tiny request; return the first endpoint that answers, or null after
+     * recording every failure reason in [errSink] (surfaced in the UI).
+     */
+    private fun pickEndpoint(download: Boolean, errSink: StringBuilder): String? {
+        val fails = mutableListOf<String>()
+        for (ep in if (download) DL_ENDPOINTS else UL_ENDPOINTS) {
+            if (cancelled) return null
+            status = "Probing ${hostOf(ep)}…"
+            val e = probeEndpoint(ep, download)
+            if (e == null) return ep
+            fails.add("${hostOf(ep)}: $e")
+        }
+        errSink.append("all endpoints unreachable — ").append(fails.joinToString("; "))
+        return null
+    }
+
+    /** Tiny probe request; null = endpoint OK, non-null = failure reason. */
+    private fun probeEndpoint(ep: String, download: Boolean): String? {
+        var c: HttpURLConnection? = null
+        return try {
+            c = URL(ep).openConnection() as HttpURLConnection
+            c.connectTimeout = 4000
+            c.readTimeout = 4000
+            c.setRequestProperty("User-Agent", UA)
+            if (download) {
+                c.setRequestProperty("Accept-Encoding", "identity")
+                val code = c.responseCode
+                if (code !in 200..299) "HTTP $code"
+                else { c.inputStream.use { it.read(ByteArray(32768)) }; null }
+            } else {
+                // speed.cloudflare.com/__up 403s without this Origin header
+                c.setRequestProperty("Origin", "https://speed.cloudflare.com")
+                c.doOutput = true
+                c.requestMethod = "POST"
+                c.setRequestProperty("Content-Type", "application/octet-stream")
+                c.setChunkedStreamingMode(65536)
+                c.outputStream.use { it.write(ByteArray(131072)); it.flush() }
+                val code = c.responseCode
+                if (code in 200..299) null else "HTTP $code"
+            }
+        } catch (e: Exception) {
+            e.message ?: e.javaClass.simpleName
+        } finally {
+            c?.disconnect()
+        }
+    }
+
+    /**
+     * Multi-stream throughput against the probed endpoint with a ~5 Hz sampler
+     * feeding the gauge/graph and a parallel prober recording loaded latency.
+     * Worker errors land in [errSink]; zero bytes transferred is reported too.
      * Returns avg Mbps over the whole window (total bytes / total seconds).
      */
-    private fun throughputPhase(download: Boolean, loadedSink: MutableList<Int>): Double {
+    private fun throughputPhase(
+        download: Boolean,
+        loadedSink: MutableList<Int>,
+        probe: Pair<String, Int>,
+        endpoint: String,
+        errSink: StringBuilder
+    ): Double {
         val bytes = AtomicLong()
         val errRef = AtomicReference<String?>(null)
         val t0 = System.currentTimeMillis()
@@ -210,19 +334,12 @@ object OoklaSpeed {
                 var os: OutputStream? = null
                 var c: HttpURLConnection? = null
                 try {
-                    c = (if (download) URL(DL_URL) else URL(UP_URL))
-                        .openConnection() as HttpsURLConnection
+                    c = URL(endpoint).openConnection() as HttpURLConnection
                     c.connectTimeout = 5000
                     c.readTimeout = 15000
-                    if (download) {
-                        c.setRequestProperty("Accept-Encoding", "identity")
-                    } else {
-                        c.doOutput = true
-                        c.requestMethod = "POST"
-                        c.setRequestProperty("Content-Type", "application/octet-stream")
-                    }
                     c.setRequestProperty("User-Agent", UA)
                     if (download) {
+                        c.setRequestProperty("Accept-Encoding", "identity")
                         val code = c.responseCode
                         if (code < 200 || code >= 300) throw IOException("HTTP $code")
                         ins = c.inputStream
@@ -234,8 +351,18 @@ object OoklaSpeed {
                             bytes.addAndGet(n.toLong())
                         }
                     } else {
+                        // speed.cloudflare.com/__up 403s without this Origin header
+                        c.setRequestProperty("Origin", "https://speed.cloudflare.com")
+                        c.doOutput = true
+                        c.requestMethod = "POST"
+                        c.setRequestProperty("Content-Type", "application/octet-stream")
+                        // v5.3.2: stream the body for real. HttpURLConnection's
+                        // default buffering mode never puts data on the wire
+                        // until close(), so the old gauge counted bytes into a
+                        // memory buffer instead of measuring the network.
+                        c.setChunkedStreamingMode(65536)
                         os = c.outputStream
-                        val chunk = ByteArray(32768)
+                        val chunk = ByteArray(65536)
                         var sent = 0L
                         while (!cancelled && System.currentTimeMillis() < deadline && sent < 25_000_000L) {
                             os.write(chunk)
@@ -244,6 +371,9 @@ object OoklaSpeed {
                             bytes.addAndGet(chunk.size.toLong())
                             if ((sent and 0x3FFFFL) == 0L) Thread.sleep(5)
                         }
+                        // verify the server actually accepted the body
+                        val code = c.responseCode
+                        if (code < 200 || code >= 300) throw IOException("HTTP $code")
                     }
                 } catch (e: Exception) {
                     errRef.compareAndSet(null, e.message ?: e.javaClass.simpleName)
@@ -288,10 +418,11 @@ object OoklaSpeed {
             }
         }
 
-        // loaded-latency prober: TCP pings under load (bufferbloat signal)
+        // loaded-latency prober: TCP pings under load (bufferbloat signal);
+        // v5.3.2 targets the same reachable host the idle ping locked onto
         val prober = Thread {
             while (!cancelled && System.currentTimeMillis() < deadline - 400) {
-                tcpPing(PROBE_HOST, PROBE_PORT, 900)?.let { loadedSink.add(it) }
+                tcpPing(probe.first, probe.second, 900)?.let { loadedSink.add(it) }
                 try { Thread.sleep(500) } catch (e: InterruptedException) { return@Thread }
             }
         }
@@ -304,6 +435,13 @@ object OoklaSpeed {
 
         val secs = (System.currentTimeMillis() - t0) / 1000.0
         val b = bytes.get()
+        // v5.3.2: surface worker failures and zero-data runs instead of a silent 0.0
+        val workerErr = errRef.get()
+        if (workerErr != null) {
+            errSink.append("${hostOf(endpoint)} ${if (download) "down" else "up"}: $workerErr")
+        } else if (b == 0L) {
+            errSink.append("${hostOf(endpoint)}: no data transferred")
+        }
         return if (secs < 1.0 || b == 0L) 0.0 else b * 8 / 1e6 / secs
     }
 
