@@ -46,15 +46,25 @@ object OoklaSpeed {
         "8.8.8.8" to 53
     )
 
-    /** Download endpoint candidates, tried in order after a liveness probe. */
+    /** Download endpoint candidates, tried in order after a liveness probe.
+     *  v5.3.3 evidence (laptop, same LAN as the phone, curl):
+     *    __down?bytes=100000000  -> HTTP 403 (bytes param exceeds CF limit)
+     *    __down?bytes=25000000   -> HTTP 200, 25,000,000 bytes
+     *    __down?bytes=10000000   -> HTTP 200, 10,000,000 bytes
+     *  The 100M request is what broke downloads on v5.3.2. proof.ovh.net
+     *  (12 s for 2.4 MB), speedtest.tele2.net:443 (connect refused),
+     *  thinkbroadband (abrupt close), cachefly (24-byte redirect page),
+     *  mirror.leaseweb.com (404) and speed.hetzner.de (dead, also banned)
+     *  all failed live testing — Cloudflare remains the only verified chain. */
     private val DL_ENDPOINTS = listOf(
-        "https://speed.cloudflare.com/__down?bytes=100000000",
-        "https://proof.ovh.net/files/10Gb.dat"
+        "https://speed.cloudflare.com/__down?bytes=25000000",
+        "https://speed.cloudflare.com/__down?bytes=10000000"
     )
 
     /** Upload endpoint candidates, tried in order after a liveness probe.
      *  NOTE: speed.cloudflare.com/__up returns 403 unless an Origin header
-     *  for https://speed.cloudflare.com is present — probe/measure set it. */
+     *  for https://speed.cloudflare.com is present — probe/measure set it.
+     *  tele2 http upload.php verified 200 on this LAN (https port refused). */
     private val UL_ENDPOINTS = listOf(
         "https://speed.cloudflare.com/__up",
         "http://speedtest.tele2.net/upload.php"
@@ -87,6 +97,12 @@ object OoklaSpeed {
     var asInfo by mutableStateOf<String?>(null)
     var edgeColo by mutableStateOf<String?>(null)     // Cloudflare edge airport code
     var serverCity by mutableStateOf<String?>(null)   // ip-api city/country of egress IP
+
+    /** v5.3.3: endpoint actually used + bytes moved per direction (result row). */
+    var viaDl by mutableStateOf<String?>(null)
+    var viaUl by mutableStateOf<String?>(null)
+    var dlMb by mutableStateOf<Double?>(null)
+    var ulMb by mutableStateOf<Double?>(null)
 
     @Volatile private var cancelled = false
     @Volatile private var thread: Thread? = null
@@ -224,6 +240,15 @@ object OoklaSpeed {
                         grade ?: "n/a"
                     )
                 )
+                // v5.3.3: show which endpoint moved the data and how much
+                viaDl?.let { h ->
+                    append(" · ↓ via ").append(h)
+                    dlMb?.let { mb -> append(String.format(" (%.1f MB)", mb)) }
+                }
+                viaUl?.let { h ->
+                    append(" · ↑ via ").append(h)
+                    ulMb?.let { mb -> append(String.format(" (%.1f MB)", mb)) }
+                }
                 if (failed.isNotEmpty()) append(" · FAILED ").append(failed.joinToString(" / "))
             }
             saveResult(ctx, down, up)
@@ -246,6 +271,10 @@ object OoklaSpeed {
         loadedDown = null
         loadedUp = null
         grade = null
+        viaDl = null
+        viaUl = null
+        dlMb = null
+        ulMb = null
         err = ""
         status = ""
         publicIp = null
@@ -282,8 +311,8 @@ object OoklaSpeed {
         var c: HttpURLConnection? = null
         return try {
             c = URL(ep).openConnection() as HttpURLConnection
-            c.connectTimeout = 4000
-            c.readTimeout = 4000
+            c.connectTimeout = 5000
+            c.readTimeout = 5000
             c.setRequestProperty("User-Agent", UA)
             if (download) {
                 c.setRequestProperty("Accept-Encoding", "identity")
@@ -330,57 +359,77 @@ object OoklaSpeed {
         val nStreams = if (download) 4 else 2
         val workers = (0 until nStreams).map {
             Thread {
-                var ins: InputStream? = null
-                var os: OutputStream? = null
-                var c: HttpURLConnection? = null
                 try {
-                    c = URL(endpoint).openConnection() as HttpURLConnection
-                    c.connectTimeout = 5000
-                    c.readTimeout = 15000
-                    c.setRequestProperty("User-Agent", UA)
                     if (download) {
-                        c.setRequestProperty("Accept-Encoding", "identity")
-                        val code = c.responseCode
-                        if (code < 200 || code >= 300) throw IOException("HTTP $code")
-                        ins = c.inputStream
-                        val b = ByteArray(65536)
-                        var n: Int
-                        while (!cancelled && System.currentTimeMillis() < deadline) {
-                            n = ins.read(b)
-                            if (n <= 0) break
-                            bytes.addAndGet(n.toLong())
+                        // v5.3.3: a 25 MB response finishes in ~1 s on fast
+                        // links, so keep reopening the stream until the window
+                        // ends — the old single-shot read stopped counting at
+                        // EOF and diluted the average toward zero.
+                        var restarts = 0
+                        while (!cancelled && System.currentTimeMillis() < deadline && restarts < 40) {
+                            var eof = false
+                            var conn: HttpURLConnection? = null
+                            try {
+                                conn = URL(endpoint).openConnection() as HttpURLConnection
+                                conn.connectTimeout = 5000
+                                conn.readTimeout = 15000
+                                conn.setRequestProperty("User-Agent", UA)
+                                conn.setRequestProperty("Accept-Encoding", "identity")
+                                val code = conn.responseCode
+                                if (code < 200 || code >= 300) throw IOException("HTTP $code")
+                                val stream = conn.inputStream
+                                val b = ByteArray(65536)
+                                var n: Int
+                                while (!cancelled && System.currentTimeMillis() < deadline) {
+                                    n = stream.read(b)
+                                    if (n <= 0) { eof = true; break }
+                                    bytes.addAndGet(n.toLong())
+                                }
+                                try { stream.close() } catch (ignored: Exception) {}
+                            } finally {
+                                conn?.disconnect()
+                            }
+                            if (!eof) break   // window over or cancelled
+                            restarts++
                         }
                     } else {
-                        // speed.cloudflare.com/__up 403s without this Origin header
-                        c.setRequestProperty("Origin", "https://speed.cloudflare.com")
-                        c.doOutput = true
-                        c.requestMethod = "POST"
-                        c.setRequestProperty("Content-Type", "application/octet-stream")
-                        // v5.3.2: stream the body for real. HttpURLConnection's
-                        // default buffering mode never puts data on the wire
-                        // until close(), so the old gauge counted bytes into a
-                        // memory buffer instead of measuring the network.
-                        c.setChunkedStreamingMode(65536)
-                        os = c.outputStream
-                        val chunk = ByteArray(65536)
-                        var sent = 0L
-                        while (!cancelled && System.currentTimeMillis() < deadline && sent < 25_000_000L) {
-                            os.write(chunk)
-                            os.flush()
-                            sent += chunk.size
-                            bytes.addAndGet(chunk.size.toLong())
-                            if ((sent and 0x3FFFFL) == 0L) Thread.sleep(5)
+                        var c: HttpURLConnection? = null
+                        var os: OutputStream? = null
+                        try {
+                            c = URL(endpoint).openConnection() as HttpURLConnection
+                            c.connectTimeout = 5000
+                            c.readTimeout = 15000
+                            c.setRequestProperty("User-Agent", UA)
+                            // speed.cloudflare.com/__up 403s without this Origin header
+                            c.setRequestProperty("Origin", "https://speed.cloudflare.com")
+                            c.doOutput = true
+                            c.requestMethod = "POST"
+                            c.setRequestProperty("Content-Type", "application/octet-stream")
+                            // v5.3.2: stream the body for real. HttpURLConnection's
+                            // default buffering mode never puts data on the wire
+                            // until close(), so the old gauge counted bytes into a
+                            // memory buffer instead of measuring the network.
+                            c.setChunkedStreamingMode(65536)
+                            os = c.outputStream
+                            val chunk = ByteArray(65536)
+                            var sent = 0L
+                            while (!cancelled && System.currentTimeMillis() < deadline && sent < 25_000_000L) {
+                                os.write(chunk)
+                                os.flush()
+                                sent += chunk.size
+                                bytes.addAndGet(chunk.size.toLong())
+                                if ((sent and 0x3FFFFL) == 0L) Thread.sleep(5)
+                            }
+                            // verify the server actually accepted the body
+                            val code = c.responseCode
+                            if (code < 200 || code >= 300) throw IOException("HTTP $code")
+                        } finally {
+                            try { os?.close() } catch (ignored: Exception) {}
+                            c?.disconnect()
                         }
-                        // verify the server actually accepted the body
-                        val code = c.responseCode
-                        if (code < 200 || code >= 300) throw IOException("HTTP $code")
                     }
                 } catch (e: Exception) {
                     errRef.compareAndSet(null, e.message ?: e.javaClass.simpleName)
-                } finally {
-                    try { ins?.close() } catch (ignored: Exception) {}
-                    try { os?.close() } catch (ignored: Exception) {}
-                    c?.disconnect()
                 }
             }
         }
