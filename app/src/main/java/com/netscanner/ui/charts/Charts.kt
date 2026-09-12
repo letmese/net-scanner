@@ -241,3 +241,70 @@ fun SignalBars(level: Int, modifier: Modifier = Modifier, color: Color = LocalGl
         }
     }
 }
+
+/**
+ * Legacy SignalGraphView port (Cell Monitor Graph tab): fixed -130..-40 dBm
+ * scale, one sample per second, NaN gaps break the line (no fake carry-over),
+ * dBm gridlines with labels. Old chart semantics: negative dBm values plotted
+ * against a dBm ruler, NOT a 0..max latency ruler.
+ */
+@Composable
+fun SignalChart(
+    samples: List<Float>,
+    modifier: Modifier = Modifier,
+    color: Color = LocalGlassPalette.current.accent,
+    label: String? = null
+) {
+    val p = LocalGlassPalette.current
+    val minDbm = -130f
+    val maxDbm = -40f
+    val last = samples.lastOrNull { !it.isNaN() }
+    Column(modifier) {
+        if (label != null) {
+            Text(label, color = p.dim, fontSize = 12.sp)
+            Spacer(Modifier.height(4.dp))
+        }
+        Canvas(Modifier.fillMaxWidth().height(120.dp)) {
+            // grid + dBm ruler labels (legacy SignalGraphView drew the same)
+            val grid = p.faint.copy(alpha = 0.35f)
+            val marks = listOf(-120f, -110f, -100f, -90f, -80f, -60f)
+            for (m in marks) {
+                if (m < minDbm || m > maxDbm) continue
+                val y = size.height - ((m - minDbm) / (maxDbm - minDbm)) * size.height
+                drawLine(grid, Offset(0f, y), Offset(size.width, y), 1f)
+            }
+            if (samples.none { !it.isNaN() }) {
+                drawLine(p.faint, Offset(0f, size.height / 2), Offset(size.width, size.height / 2), 2f)
+                return@Canvas
+            }
+            fun y(v: Float) = size.height - ((v.coerceIn(minDbm, maxDbm) - minDbm) / (maxDbm - minDbm)) * size.height
+
+            val path = Path()
+            var started = false
+            for ((i, v) in samples.withIndex()) {
+                if (v.isNaN()) { started = false; continue }   // gap: break the line
+                val q = Offset(i * size.width / (samples.size - 1).coerceAtLeast(1), y(v))
+                if (!started) { path.moveTo(q.x, q.y); started = true } else path.lineTo(q.x, q.y)
+            }
+            val fill = Path().apply {
+                addPath(path)
+                lineTo(size.width, size.height)
+                lineTo(0f, size.height)
+                close()
+            }
+            drawPath(
+                fill,
+                Brush.verticalGradient(
+                    listOf(color.copy(alpha = 0.25f), Color.Transparent),
+                    startY = 0f, endY = size.height
+                )
+            )
+            drawPath(path, color, style = Stroke(chartStrokeWidth(), cap = StrokeCap.Round))
+        }
+        Spacer(Modifier.height(2.dp))
+        Text(
+            last?.let { "now $it dBm · scale $minDbm..$maxDbm dBm" } ?: "no samples yet",
+            color = p.faint, fontSize = 10.sp
+        )
+    }
+}

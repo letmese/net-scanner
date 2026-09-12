@@ -10,7 +10,6 @@ import android.telephony.CellInfoLte
 import android.telephony.CellInfoNr
 import android.telephony.CellInfoWcdma
 import android.telephony.SubscriptionManager
-import android.telephony.SignalStrength
 import android.telephony.TelephonyManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -58,6 +57,7 @@ import com.netscanner.svc.CellStore
 import com.netscanner.ui.charts.BarsChart
 import com.netscanner.ui.charts.LineChart
 import com.netscanner.ui.charts.SignalBars
+import com.netscanner.ui.charts.SignalChart
 import com.netscanner.ui.glass.GlassButton
 import com.netscanner.ui.glass.GlassChip
 import com.netscanner.ui.glass.GlassDesc
@@ -166,6 +166,10 @@ fun CellMonitorScreen(nav: Navigator) {
     var simGraph1 by remember { mutableStateOf<List<Float>>(emptyList()) }
     var csvList by remember { mutableStateOf<List<String>>(emptyList()) }
     var eventsList by remember { mutableStateOf<List<String>>(emptyList()) }
+    // v5.1.4: per-SIM direct-read dBm (keyed by subscriptionId) so the SIM
+    // rows show genuinely distinct per-subscription data regardless of the
+    // service state.
+    var perSimDbm by remember { mutableStateOf<Map<Int, Int>>(emptyMap()) }
     // v5.1.0: restored legacy 6-tab layout (Cells / Gauges / Graph / Log / Info / Map)
     val tabs = listOf("Cells", "Gauges", "Graph", "Log", "Info", "Map")
     var tab by remember { mutableStateOf("Cells") }
@@ -175,23 +179,55 @@ fun CellMonitorScreen(nav: Navigator) {
     // auto-start-on-screen-open block is gone; the toggle below is the only
     // path that launches CellService.
 
-    // 1 Hz UI mirror loop (legacy UI tick semantics). The CellService
-    // sampler thread is the single writer of CellStore; this loop only
-    // copies the store into compose state. There is deliberately NO
-    // screen-side sampling fallback: the legacy app never sampled from the
-    // Activity when the service was off — with manual start, an unstarted
-    // monitor shows the clean empty state, not stale/duplicated data.
+    // 1 Hz UI loop. v5.1.4 Gauges semantics (boss requirement): the gauges
+    // are LIVE THE MOMENT THE TAB OPENS, service or not.
+    //  - CellService running: the 1 Hz getAllCellInfo sampler is the single
+    //    writer of CellStore; this loop copies the store into compose state
+    //    (graph/log/CSV refresh unconditionally -- a tick without a serving
+    //    cell still appends NaN samples and must reach the Graph).
+    //  - Service off: the UI samples signalStrength directly every second
+    //    (no permission needed, per v5.1.2 lesson). Start Monitor remains
+    //    the only path for the full pipeline (events / log / graph / CSV).
     LaunchedEffect(Unit) {
         while (true) {
-            val d = CellStore.lastDbm
-            if (CellService.running && d != Int.MAX_VALUE) {
-                dbm = d
-                asu = CellStore.lastAsu
-                bars = CellStore.lastBars
+            if (CellService.running) {
+                val d = CellStore.lastDbm
+                if (d != Int.MAX_VALUE) {
+                    dbm = d
+                    asu = CellStore.lastAsu
+                    bars = CellStore.lastBars
+                }
                 simGraph0 = CellStore.snapshotSamples(0)
                 simGraph1 = CellStore.snapshotSamples(1)
                 csvList = CellStore.snapshotRows()
                 eventsList = CellStore.snapshotEvents()
+            } else {
+                // NOTE: this SDK's SignalStrength stub exposes no getDbm();
+                // the per-RAT CellSignalStrength (first entry) does.
+                val ss = try { currentTm.signalStrength } catch (_: Throwable) { null }
+                val css = try { ss?.cellSignalStrengths?.firstOrNull() } catch (_: Throwable) { null }
+                val d = css?.dbm ?: Int.MAX_VALUE
+                if (d != Int.MAX_VALUE) {
+                    dbm = d
+                    asu = try { css!!.asuLevel } catch (_: Throwable) { -1 }
+                    bars = CellService.barsOf(d)
+                }
+            }
+            // Per-SIM direct reads -- every read goes through its OWN
+            // per-subscription TelephonyManager (tm.createForSubscriptionId),
+            // the fix for the copied/duplicated dual-SIM data. getSignalStrength
+            // needs NO runtime permission, so this works even before grants.
+            if (sims.size > 1) {
+                val m = mutableMapOf<Int, Int>()
+                for (s in sims) {
+                    try {
+                        val stm = tm.createForSubscriptionId(s.subId)
+                        val d = stm.signalStrength
+                            ?.cellSignalStrengths?.firstOrNull()?.dbm ?: Int.MAX_VALUE
+                        if (d != Int.MAX_VALUE) m[s.subId] = d
+                    } catch (_: Throwable) {}
+                }
+                perSimDbm = m
             }
             delay(1000)
         }
@@ -377,9 +413,9 @@ fun CellMonitorScreen(nav: Navigator) {
                     if (dbm == null) {
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            "No live sample yet — the 1 Hz sampler needs a second. " +
+                            "No live sample yet — sampling starts the moment this tab opens. " +
                                 "If this persists: " + CellStore.lastError.ifBlank {
-                                    "make sure monitoring is on (Start Monitor)."
+                                    "check that a SIM is active and airplane mode is off."
                                 },
                             color = p.warn, fontSize = 12.sp
                         )
@@ -398,7 +434,9 @@ fun CellMonitorScreen(nav: Navigator) {
                         KV("Bars", "$bars / 4")
                         // v5.1.2: which producer wrote the latest sample —
                         // makes the data pipeline verifiable on device.
-                        KV("Source", CellStore.lastSource)
+                        // v5.1.4: "direct" while the service is off (UI-side
+                        // sampling) so the source is always truthful.
+                        KV("Source", if (CellService.running) CellStore.lastSource else "direct")
                     }
                     // v5.1.3: legacy per-rat metric block (RSRP/RSRQ/SINR,
                     // band, PCI/EARFCN) straight from the getAllCellInfo
@@ -419,12 +457,15 @@ fun CellMonitorScreen(nav: Navigator) {
                             KV("Band", if (sv.band > 0) "B${sv.band}" else "--")
                         }
                     }
-                    // v5.1.1: at-a-glance per-SIM signal on dual-SIM devices
-                    // (v5.1.3: read the store, no per-frame TelephonyManager I/O)
+                    // v5.1.1: at-a-glance per-SIM signal on dual-SIM devices.
+                    // v5.1.4: per-subscription DIRECT reads (each row samples
+                    // its own tm.createForSubscriptionId(subId).signalStrength
+                    // every second in the UI loop) -- the two rows now show
+                    // genuinely distinct data, no store/copy-paste path.
                     if (sims.size > 1) {
                         Spacer(Modifier.height(8.dp))
-                        sims.forEachIndexed { idx, s ->
-                            val sdbm = CellStore.servingFor(idx)?.dbm
+                        sims.forEach { s ->
+                            val sdbm = perSimDbm[s.subId]
                             val shown = sdbm?.takeIf { it != -1 }?.toString() ?: "--"
                             Text(
                                 "SIM${s.slot + 1} ${s.name} · ${s.carrier.ifBlank { "?" }} · $shown dBm",
@@ -441,22 +482,24 @@ fun CellMonitorScreen(nav: Navigator) {
             }
             "Graph" -> {
                 LiquidGlassCard(Modifier.fillMaxWidth()) {
-                    if (simGraph0.none { !it.isNaN() } && simGraph1.none { !it.isNaN() }) {
+                    if (simGraph0.all { it.isNaN() } && simGraph1.all { it.isNaN() }) {
                         Text(
-                            "No data yet — one sample per second fills this within moments. " +
-                                "If it stays empty, check the permission banner above.",
+                            "No data yet — start Monitor and one sample per second fills this within moments.",
                             color = p.dim, fontSize = 12.sp
                         )
                         Spacer(Modifier.height(6.dp))
                     }
-                    LineChart(
+                    // v5.1.4: legacy SignalGraphView port — fixed -130..-40 dBm
+                    // ruler + NaN gaps. The old LineChart clipped every negative
+                    // dBm value below its fixed 0 floor (graph looked dead).
+                    SignalChart(
                         simGraph0, Modifier.fillMaxWidth(),
                         color = p.accent,
                         label = "SIM1 signal (dBm), rolling 4 minutes @ 1 Hz"
                     )
                     if (sims.size > 1) {
                         Spacer(Modifier.height(10.dp))
-                        LineChart(
+                        SignalChart(
                             simGraph1, Modifier.fillMaxWidth(),
                             color = p.warn,
                             label = "SIM2 signal (dBm), rolling 4 minutes @ 1 Hz"

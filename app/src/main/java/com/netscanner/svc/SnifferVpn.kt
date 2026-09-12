@@ -56,6 +56,9 @@ class SnifferVpnService : VpnService() {
     @Volatile private var stopFlag = false
     private var worker: Thread? = null
 
+    /** Legacy forward pipeline: fixed 4-worker pool, one thread per DNS packet. */
+    private val forwardPool = java.util.concurrent.Executors.newFixedThreadPool(4)
+
     /** Legacy route sources: hardcoded publics + whatever the network uses. */
     private val routedDns = LinkedHashSet<String>()
 
@@ -119,7 +122,6 @@ class SnifferVpnService : VpnService() {
         try {
             val b = Builder()
                 .setSession("NetScanner DNS Sniffer")
-                .setMtu(32767)
                 .addAddress("10.111.222.1", 32)
                 .addDnsServer("8.8.8.8")            // legacy: a REAL resolver so the VPN network's DNS config is valid
             // Legacy route set: every DNS server the device could ever use,
@@ -158,7 +160,13 @@ class SnifferVpnService : VpnService() {
                 while (!stopFlag) {
                     val n = input.read(buf)
                     if (n <= 0) break
-                    handlePacket(buf, n, output)
+                    // Legacy pipeline: forward each packet on the thread pool
+                    // (4 workers) so one slow upstream never stalls the TUN
+                    // read loop. copyOf is REQUIRED -- buf is reused by read().
+                    val pkt = buf.copyOf(n)
+                    forwardPool.execute {
+                        try { handlePacket(pkt, pkt.size, output) } catch (_: Throwable) {}
+                    }
                 }
             } catch (_: Throwable) {
             } finally {
@@ -215,7 +223,7 @@ class SnifferVpnService : VpnService() {
     private fun tryUdpForward(dns: ByteArray, up: String): ByteArray? = try {
         DatagramSocket().use { sock ->
             try { protect(sock) } catch (_: Exception) {}
-            sock.soTimeout = 2500
+            sock.soTimeout = 3000
             sock.send(DatagramPacket(dns, dns.size,
                 InetSocketAddress(InetAddress.getByName(up), 53)))
             val rb = ByteArray(4096)
@@ -242,10 +250,10 @@ class SnifferVpnService : VpnService() {
         // swap directions: src <- original dst, dst <- original src
         System.arraycopy(req, 16, o, 12, 4)                 // new src = original dst (real server)
         System.arraycopy(req, 12, o, 16, 4)                 // new dst = original src (requester)
-        o[udpOff] = ((udpLen shr 8) and 0xFF).toByte(); o[udpOff + 1] = (udpLen and 0xFF).toByte()
-        o[udpOff + 2] = 0.toByte(); o[udpOff + 3] = 53.toByte()                 // src port 53
-        o[udpOff + 4] = req[udpOff].toInt().toByte()        // legacy: requester's port is at udpOff now
-        o[udpOff + 5] = req[udpOff + 1].toInt().toByte()
+        o[udpOff] = 0.toByte(); o[udpOff + 1] = 53.toByte()                    // src port 53 (the DNS server)
+        o[udpOff + 2] = req[udpOff]                    // dst port = the requester's ORIGINAL src port
+        o[udpOff + 3] = req[udpOff + 1]
+        o[udpOff + 4] = ((udpLen shr 8) and 0xFF).toByte(); o[udpOff + 5] = (udpLen and 0xFF).toByte()
         o[udpOff + 6] = 0.toByte(); o[udpOff + 7] = 0.toByte()  // UDP checksum 0 = valid "none"
         System.arraycopy(dns, 0, o, ihl + 8, dns.size)
         // recompute IP header checksum
@@ -288,6 +296,7 @@ class SnifferVpnService : VpnService() {
         stopFlag = true
         worker?.interrupt()
         worker = null
+        forwardPool.shutdownNow()
         try { tun?.close() } catch (_: Exception) {}
         tun = null
     }

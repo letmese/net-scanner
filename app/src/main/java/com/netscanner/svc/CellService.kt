@@ -36,6 +36,7 @@ import com.netscanner.R
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.abs
 
 /**
  * v5 Cell Monitor foreground service.
@@ -68,6 +69,12 @@ class CellService : android.app.Service() {
         val mnc: String
     ) {
         var lastCellKey: String = ""
+        // Legacy Log-tab event state: the old event key was RAT|identity, so
+        // a RAT switch logs even when the tower identity is unchanged, plus a
+        // throttled dBm-change record (the "signal drops" history).
+        var lastEventKey: String = ""
+        var lastDbmEvent: Int = Int.MAX_VALUE
+        var lastDbmEventAt: Long = 0L
     }
 
     private var sims: List<SimCtx> = emptyList()
@@ -132,8 +139,21 @@ class CellService : android.app.Service() {
         sampler = Thread {
             Log.d(TAG, "1 Hz getAllCellInfo sampler started")
             var firstLogged = false
+            var tick = 0
             while (running && !Thread.currentThread().isInterrupted) {
                 try {
+                    // v5.1.4 dual-SIM fix: the runtime grant may arrive while
+                    // the service is already running; re-resolve the SIM list
+                    // every 10 s when we are still on the permission-less
+                    // fallback so per-subscription TelephonyManagers appear
+                    // without a manual restart.
+                    if (++tick % 10 == 0 &&
+                        sims.size <= 1 && sims.any { it.subId == Int.MIN_VALUE } &&
+                        checkSelfPermission(Manifest.permission.READ_PHONE_STATE) ==
+                        PackageManager.PERMISSION_GRANTED
+                    ) {
+                        resolveSims()
+                    }
                     poll()
                     if (!firstLogged) {
                         Log.d(TAG, "first tick done -- serving0=${CellStore.serving0 != null}")
@@ -177,7 +197,14 @@ class CellService : android.app.Service() {
         // sticky/rank fallback picks the serving cell).
         val m = idString(id, "mccString") ?: return false
         val n = idString(id, "mncString") ?: return false
-        return m == s.mcc && n == s.mnc
+        // v5.1.4 dual-SIM fix: some modems zero-pad the MNC ("01") while
+        // SubscriptionManager reports "1" -- a strict string compare then
+        // failed for SIM 2 and its tower got handed to the wrong SIM (the
+        // "both SIMs show the same data" bug). Compare numerically first,
+        // string as fallback.
+        val mncEq = (n.toIntOrNull() != null && s.mnc.toIntOrNull() != null &&
+            n.toInt() == s.mnc.toInt()) || n == s.mnc
+        return m == s.mcc && mncEq
     }
 
     private fun idString(id: Any, m: String): String? = try {
@@ -224,7 +251,6 @@ class CellService : android.app.Service() {
                         (plmnBest == null || rank(ci) > rank(plmnBest))
                     ) plmnBest = ci
                 }
-                val prevKey = s.lastCellKey
                 val chosen = plmnBest ?: stickyBest ?: bestCi
                 if (chosen != null) {
                     sv = parse(chosen)
@@ -233,17 +259,42 @@ class CellService : android.app.Service() {
                 } else {
                     s.lastCellKey = ""
                 }
-                // Legacy tower-change log event: fires when the serving cell
-                // identity changed since the previous tick.
-                if (sv != null && prevKey.isNotEmpty() && s.lastCellKey != prevKey) {
+                // v5.1.4 Log-tab events, legacy semantics restored:
+                // (a) tower/RAT change -- the legacy event key was RAT|identity,
+                // so a RAT switch logs even when the raw identity string is
+                // unchanged;
+                // (b) significant dBm shift (>= 6 dB, throttled to one record
+                // per 10 s per SIM) -- the "signal drops" history the Log tab
+                // exists for.
+                if (sv != null) {
+                    val eventKey = sv.rat + "|" + sv.identityKey
                     val carrier = try {
                         s.tm.networkOperatorName ?: ""
                     } catch (_: Throwable) {
                         ""
                     }
-                    CellStore.appendEvent(
-                        tickEvent(System.currentTimeMillis(), i, sv, carrier)
-                    )
+                    if (s.lastEventKey.isNotEmpty() && eventKey != s.lastEventKey) {
+                        CellStore.appendEvent(
+                            tickEvent(System.currentTimeMillis(), i, sv, carrier)
+                        )
+                    }
+                    s.lastEventKey = eventKey
+                    val d = sv.dbm
+                    if (d > 0) {
+                        val now = System.currentTimeMillis()
+                        if (s.lastDbmEvent == Int.MAX_VALUE) {
+                            s.lastDbmEvent = d; s.lastDbmEventAt = now
+                        } else if (abs(d - s.lastDbmEvent) >= 6 && now - s.lastDbmEventAt >= 10_000) {
+                            CellStore.appendEvent(
+                                SimpleDateFormat("HH:mm:ss", Locale.US).format(Date(now)) +
+                                    " [S${i + 1}] ~ dBm ${s.lastDbmEvent} → $d (${sv.rat})"
+                            )
+                            s.lastDbmEvent = d; s.lastDbmEventAt = now
+                        } else if (now - s.lastDbmEventAt >= 10_000) {
+                            // rebase the reference so slow drift cannot accumulate
+                            s.lastDbmEvent = d; s.lastDbmEventAt = now
+                        }
+                    }
                 }
                 for (ci in cells) {
                     if (!ci.isRegistered) neighborLine(ci)?.let { nb.add(it) }

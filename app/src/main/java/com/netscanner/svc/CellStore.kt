@@ -70,10 +70,10 @@ object CellStore {
     }
 
     /**
-     * Publish one per-SIM tick result. graphDbm uses the legacy -999
-     * "no sample" sentinel; a serving snapshot of null keeps the previous
-     * graph value at -999 so the graph shows the gap instead of a fake
-     * carry-over.
+     * Publish one per-SIM tick result. graphDbm uses Float.NaN as the
+     * "no sample" sentinel (exactly what the chart layer filters to draw
+     * gaps); a serving snapshot of null keeps the previous graph value at
+     * NaN so the graph shows the gap instead of a fake carry-over.
      */
     @Synchronized
     fun setSim(index: Int, sv: Serving?) {
@@ -81,7 +81,7 @@ object CellStore {
         simCount = maxOf(simCount, index + 1)
         val q = if (index == 0) samples0 else samples1
         val v = sv?.dbm ?: -999
-        q.addLast(v.toFloat())
+        q.addLast(if (v == -999) Float.NaN else v.toFloat())
         while (q.size > MAX_SAMPLES) q.removeFirst()
 
         // Aggregate scalars: prefer SIM 1, fall back to SIM 2 (legacy rule).
