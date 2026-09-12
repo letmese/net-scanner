@@ -158,68 +158,40 @@ fun CellMonitorScreen(nav: Navigator) {
     var tech by remember { mutableStateOf("--") }
     var operator by remember { mutableStateOf("--") }
     val neighbors = remember { mutableStateListOf<String>() }
-    // v5.1.2: Gauges/Graph/Log/CSV all read the unified CellStore; these
-    // read-only mirrors are refreshed every second by the UI loop.
-    var samplesList by remember { mutableStateOf<List<Float>>(emptyList()) }
+    // v5.1.3: Gauges/Graph/Log/CSV all read the unified CellStore (fed by the
+    // legacy-style 1 Hz getAllCellInfo sampler); these read-only mirrors are
+    // refreshed every second by the UI loop. Graph series are per-SIM;
+    // Float.NaN slots mean "no serving cell that second" (drawn as gaps).
+    var simGraph0 by remember { mutableStateOf<List<Float>>(emptyList()) }
+    var simGraph1 by remember { mutableStateOf<List<Float>>(emptyList()) }
     var csvList by remember { mutableStateOf<List<String>>(emptyList()) }
     var eventsList by remember { mutableStateOf<List<String>>(emptyList()) }
     // v5.1.0: restored legacy 6-tab layout (Cells / Gauges / Graph / Log / Info / Map)
     val tabs = listOf("Cells", "Gauges", "Graph", "Log", "Info", "Map")
     var tab by remember { mutableStateOf("Cells") }
 
-    // v5.1.2: auto-start the foreground service the moment the screen opens
-    // (passing the selected subscription) so its 1 Hz sampler feeds CellStore
-    // even before any tab is viewed — no more silent empty states from
-    // "never tapped Start Monitor".
-    LaunchedEffect(selSub) {
-        val svc = Intent(ctx, CellService::class.java)
-        selSub?.let { svc.putExtra(CellService.EXTRA_SUB_ID, it) }
-        if (!CellService.running) {
-            ContextCompat.startForegroundService(ctx, svc)
-        } else {
-            try { ctx.startService(svc) } catch (_: Exception) {}
-        }
-        monitoring = true
-    }
+    // v5.1.3 MANUAL START (legacy behaviour, explicit boss requirement):
+    // NOTHING samples until the user presses Start Monitor. The old
+    // auto-start-on-screen-open block is gone; the toggle below is the only
+    // path that launches CellService.
 
-    // 1 Hz UI mirror loop. The CellService sampler thread is the single
-    // writer of CellStore; this loop copies the store into compose state so
-    // Gauges/Graph/Log stay live. If the service died but monitoring is
-    // still on, the screen samples directly and feeds the same store — one
-    // source of truth either way. getSignalStrength() requires NO runtime
-    // permission, so the direct read is unconditional: the v5.1.1 bug was
-    // gating it behind READ_PHONE_STATE, leaving every tab empty for users
-    // who never granted it.
+    // 1 Hz UI mirror loop (legacy UI tick semantics). The CellService
+    // sampler thread is the single writer of CellStore; this loop only
+    // copies the store into compose state. There is deliberately NO
+    // screen-side sampling fallback: the legacy app never sampled from the
+    // Activity when the service was off — with manual start, an unstarted
+    // monitor shows the clean empty state, not stale/duplicated data.
     LaunchedEffect(Unit) {
         while (true) {
-            if (CellService.running) {
-                val d = CellStore.lastDbm
-                if (d != Int.MAX_VALUE) {
-                    dbm = d
-                    asu = CellStore.lastAsu
-                    bars = CellStore.lastBars
-                    samplesList = CellStore.snapshotSamples()
-                    csvList = CellStore.snapshotRows()
-                    eventsList = CellStore.snapshotEvents()
-                }
-            } else if (monitoring) {
-                try {
-                    val ss = tm.signalStrength
-                    val v = CellService.cellDbm(ss)
-                    if (v != Int.MAX_VALUE) {
-                        val a = try {
-                            SignalStrength::class.java.getMethod("getAsuLevel").invoke(ss) as Int
-                        } catch (_: Exception) { -1 }
-                        val b = try { ss?.level ?: 0 } catch (_: Exception) { 0 }
-                        CellStore.appendSample(v, a, b, "screen")
-                        dbm = v
-                        asu = a
-                        bars = b
-                        samplesList = CellStore.snapshotSamples()
-                        csvList = CellStore.snapshotRows()
-                        eventsList = CellStore.snapshotEvents()
-                    }
-                } catch (_: Exception) {}
+            val d = CellStore.lastDbm
+            if (CellService.running && d != Int.MAX_VALUE) {
+                dbm = d
+                asu = CellStore.lastAsu
+                bars = CellStore.lastBars
+                simGraph0 = CellStore.snapshotSamples(0)
+                simGraph1 = CellStore.snapshotSamples(1)
+                csvList = CellStore.snapshotRows()
+                eventsList = CellStore.snapshotEvents()
             }
             delay(1000)
         }
@@ -428,15 +400,32 @@ fun CellMonitorScreen(nav: Navigator) {
                         // makes the data pipeline verifiable on device.
                         KV("Source", CellStore.lastSource)
                     }
+                    // v5.1.3: legacy per-rat metric block (RSRP/RSRQ/SINR,
+                    // band, PCI/EARFCN) straight from the getAllCellInfo
+                    // pipeline — the numbers the old Cell tab always showed.
+                    val sv = CellStore.servingFor(0) ?: CellStore.servingFor(1)
+                    if (sv != null) {
+                        Spacer(Modifier.height(10.dp))
+                        SectionTitle("Serving cell · ${sv.rat}")
+                        Text(sv.shortId, color = p.dim, fontSize = 12.sp)
+                        Spacer(Modifier.height(6.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                            KV("RSRP", CellStore.metricStr(sv.rsrp))
+                            KV("RSRQ", CellStore.metricStr(sv.rsrq))
+                            KV("SINR", CellStore.metricStr(sv.sinr))
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                            KV("ASU", if (sv.asu >= 0) sv.asu.toString() else "--")
+                            KV("Band", if (sv.band > 0) "B${sv.band}" else "--")
+                        }
+                    }
                     // v5.1.1: at-a-glance per-SIM signal on dual-SIM devices
+                    // (v5.1.3: read the store, no per-frame TelephonyManager I/O)
                     if (sims.size > 1) {
                         Spacer(Modifier.height(8.dp))
-                        sims.forEach { s ->
-                            val sdbm = try {
-                                CellService.cellDbm(tm.createForSubscriptionId(s.subId).signalStrength)
-                            } catch (_: Exception) { Int.MAX_VALUE }
-                            val shown =
-                                sdbm.takeIf { it != Int.MAX_VALUE }?.toString() ?: "--"
+                        sims.forEachIndexed { idx, s ->
+                            val sdbm = CellStore.servingFor(idx)?.dbm
+                            val shown = sdbm?.takeIf { it != -1 }?.toString() ?: "--"
                             Text(
                                 "SIM${s.slot + 1} ${s.name} · ${s.carrier.ifBlank { "?" }} · $shown dBm",
                                 color = p.dim, fontSize = 11.sp
@@ -452,7 +441,7 @@ fun CellMonitorScreen(nav: Navigator) {
             }
             "Graph" -> {
                 LiquidGlassCard(Modifier.fillMaxWidth()) {
-                    if (samplesList.size < 2) {
+                    if (simGraph0.none { !it.isNaN() } && simGraph1.none { !it.isNaN() }) {
                         Text(
                             "No data yet — one sample per second fills this within moments. " +
                                 "If it stays empty, check the permission banner above.",
@@ -461,10 +450,18 @@ fun CellMonitorScreen(nav: Navigator) {
                         Spacer(Modifier.height(6.dp))
                     }
                     LineChart(
-                        samplesList, Modifier.fillMaxWidth(),
+                        simGraph0, Modifier.fillMaxWidth(),
                         color = p.accent,
-                        label = "Signal (dBm), rolling 4 minutes sampled every second"
+                        label = "SIM1 signal (dBm), rolling 4 minutes @ 1 Hz"
                     )
+                    if (sims.size > 1) {
+                        Spacer(Modifier.height(10.dp))
+                        LineChart(
+                            simGraph1, Modifier.fillMaxWidth(),
+                            color = p.warn,
+                            label = "SIM2 signal (dBm), rolling 4 minutes @ 1 Hz"
+                        )
+                    }
                 }
                 Spacer(Modifier.height(8.dp))
                 GlassDesc(
@@ -477,8 +474,8 @@ fun CellMonitorScreen(nav: Navigator) {
                     SectionTitle("Signal change log")
                     if (eventsList.isEmpty()) {
                         Text(
-                            "Waiting for signal changes — every >=3 dB shift or bar change " +
-                                "is recorded here.",
+                            "No tower changes yet — press Start Monitor; each time the serving " +
+                                "cell or RAT changes, it is recorded here.",
                             color = p.dim, fontSize = 12.sp
                         )
                     } else {

@@ -1,0 +1,38 @@
+e: file:///C:/Users/xbxga/AppData/Roaming/Tencent/Marvis/User/oAN1i2YUvCbWP_4W7LanZr7Qb3zA/workspace/conv_5f9f6edbec66426f9dc432322748d0df/temp/net-scanner-v5/app/src/main/java/com/netscanner/svc/CellService.kt:175:26 Unresolved reference 'mccString'.
+e: file:///C:/Users/xbxga/AppData/Roaming/Tencent/Marvis/User/oAN1i2YUvCbWP_4W7LanZr7Qb3zA/workspace/conv_5f9f6edbec66426f9dc432322748d0df/temp/net-scanner-v5/app/src/main/java/com/netscanner/svc/CellService.kt:176:26 Unresolved reference 'mncString'.
+e: file:///C:/Users/xbxga/AppData/Roaming/Tencent/Marvis/User/oAN1i2YUvCbWP_4W7LanZr7Qb3zA/workspace/conv_5f9f6edbec66426f9dc432322748d0df/temp/net-scanner-v5/app/src/main/java/com/netscanner/svc/CellService.kt:328:47 Unresolved reference 'pci'.
+e: file:///C:/Users/xbxga/AppData/Roaming/Tencent/Marvis/User/oAN1i2YUvCbWP_4W7LanZr7Qb3zA/workspace/conv_5f9f6edbec66426f9dc432322748d0df/temp/net-scanner-v5/app/src/main/java/com/netscanner/svc/CellService.kt:328:58 Unresolved reference 'earfcn'.
+e: file:///C:/Users/xbxga/AppData/Roaming/Tencent/Marvis/User/oAN1i2YUvCbWP_4W7LanZr7Qb3zA/workspace/conv_5f9f6edbec66426f9dc432322748d0df/temp/net-scanner-v5/app/src/main/java/com/netscanner/svc/CellService.kt:329:47 Unresolved reference 'psc'.
+e: file:///C:/Users/xbxga/AppData/Roaming/Tencent/Marvis/User/oAN1i2YUvCbWP_4W7LanZr7Qb3zA/workspace/conv_5f9f6edbec66426f9dc432322748d0df/temp/net-scanner-v5/app/src/main/java/com/netscanner/svc/CellService.kt:329:58 Unresolved reference 'uarfcn'.
+e: file:///C:/Users/xbxga/AppData/Roaming/Tencent/Marvis/User/oAN1i2YUvCbWP_4W7LanZr7Qb3zA/workspace/conv_5f9f6edbec66426f9dc432322748d0df/temp/net-scanner-v5/app/src/main/java/com/netscanner/svc/CellService.kt:330:45 Unresolved reference 'cid'.
+e: file:///C:/Users/xbxga/AppData/Roaming/Tencent/Marvis/User/oAN1i2YUvCbWP_4W7LanZr7Qb3zA/workspace/conv_5f9f6edbec66426f9dc432322748d0df/temp/net-scanner-v5/app/src/main/java/com/netscanner/svc/CellService.kt:330:56 Unresolved reference 'arfcn'.
+e: file:///C:/Users/xbxga/AppData/Roaming/Tencent/Marvis/User/oAN1i2YUvCbWP_4W7LanZr7Qb3zA/workspace/conv_5f9f6edbec66426f9dc432322748d0df/temp/net-scanner-v5/app/src/main/java/com/netscanner/svc/CellService.kt:331:47 Unresolved reference 'bsid'.
+e: file:///C:/Users/xbxga/AppData/Roaming/Tencent/Marvis/User/oAN1i2YUvCbWP_4W7LanZr7Qb3zA/workspace/conv_5f9f6edbec66426f9dc432322748d0df/temp/net-scanner-v5/app/src/main/java/com/netscanner/svc/CellService.kt:331:58 Unresolved reference 'networkId'.
+e: file:///C:/Users/xbxga/AppData/Roaming/Tencent/Marvis/User/oAN1i2YUvCbWP_4W7LanZr7Qb3zA/workspace/conv_5f9f6edbec66426f9dc432322748d0df/temp/net-scanner-v5/app/src/main/java/com/netscanner/svc/CellService.kt:354:22 Unresolved reference 'band'.
+e: file:///C:/Users/xbxga/AppData/Roaming/Tencent/Marvis/User/oAN1i2YUvCbWP_4W7LanZr7Qb3zA/workspace/conv_5f9f6edbec66426f9dc432322748d0df/temp/net-scanner-v5/app/src/main/java/com/netscanner/svc/CellService.kt:374:40 Initializer type mismatch: expected 'CellSignalStrengthNr', actual 'CellSignalStrength'.
+e: file:///C:/Users/xbxga/AppData/Roaming/Tencent/Marvis/User/oAN1i2YUvCbWP_4W7LanZr7Qb3zA/workspace/conv_5f9f6edbec66426f9dc432322748d0df/temp/net-scanner-v5/app/src/main/java/com/netscanner/svc/CellService.kt:388:42 Argument type mismatch: actual type is 'Long?', but 'Int?' was expected.
+e: file:///C:/Users/xbxga/AppData/Roaming/Tencent/Marvis/User/oAN1i2YUvCbWP_4W7LanZr7Qb3zA/workspace/conv_5f9f6edbec66426f9dc432322748d0df/temp/net-scanner-v5/app/src/main/java/com/netscanner/svc/CellService.kt:434:25 Unresolved reference 'bsid'.
+e: file:///C:/Users/xbxga/AppData/Roaming/Tencent/Marvis/User/oAN1i2YUvCbWP_4W7LanZr7Qb3zA/workspace/conv_5f9f6edbec66426f9dc432322748d0df/temp/net-scanner-v5/app/src/main/java/com/netscanner/svc/CellService.kt:435:26 Unresolved reference 'bsid'.
+e: file:///C:/Users/xbxga/AppData/Roaming/Tencent/Marvis/User/oAN1i2YUvCbWP_4W7LanZr7Qb3zA/workspace/conv_5f9f6edbec66426f9dc432322748d0df/temp/net-scanner-v5/app/src/main/java/com/netscanner/svc/CellService.kt:447:36 Unresolved reference 'pci'.
+e: file:///C:/Users/xbxga/AppData/Roaming/Tencent/Marvis/User/oAN1i2YUvCbWP_4W7LanZr7Qb3zA/workspace/conv_5f9f6edbec66426f9dc432322748d0df/temp/net-scanner-v5/app/src/main/java/com/netscanner/svc/CellService.kt:447:57 Unresolved reference 'earfcn'.
+e: file:///C:/Users/xbxga/AppData/Roaming/Tencent/Marvis/User/oAN1i2YUvCbWP_4W7LanZr7Qb3zA/workspace/conv_5f9f6edbec66426f9dc432322748d0df/temp/net-scanner-v5/app/src/main/java/com/netscanner/svc/CellService.kt:449:38 Unresolved reference 'arfcn'.
+e: file:///C:/Users/xbxga/AppData/Roaming/Tencent/Marvis/User/oAN1i2YUvCbWP_4W7LanZr7Qb3zA/workspace/conv_5f9f6edbec66426f9dc432322748d0df/temp/net-scanner-v5/app/src/main/java/com/netscanner/svc/CellService.kt:449:59 Unresolved reference 'bsic'.
+e: file:///C:/Users/xbxga/AppData/Roaming/Tencent/Marvis/User/oAN1i2YUvCbWP_4W7LanZr7Qb3zA/workspace/conv_5f9f6edbec66426f9dc432322748d0df/temp/net-scanner-v5/app/src/main/java/com/netscanner/svc/CellService.kt:451:36 Unresolved reference 'psc'.
+e: file:///C:/Users/xbxga/AppData/Roaming/Tencent/Marvis/User/oAN1i2YUvCbWP_4W7LanZr7Qb3zA/workspace/conv_5f9f6edbec66426f9dc432322748d0df/temp/net-scanner-v5/app/src/main/java/com/netscanner/ui/screens/MonitorScreens.kt:413:50 Unresolved reference 'metricStr'.
+e: file:///C:/Users/xbxga/AppData/Roaming/Tencent/Marvis/User/oAN1i2YUvCbWP_4W7LanZr7Qb3zA/workspace/conv_5f9f6edbec66426f9dc432322748d0df/temp/net-scanner-v5/app/src/main/java/com/netscanner/ui/screens/MonitorScreens.kt:414:50 Unresolved reference 'metricStr'.
+e: file:///C:/Users/xbxga/AppData/Roaming/Tencent/Marvis/User/oAN1i2YUvCbWP_4W7LanZr7Qb3zA/workspace/conv_5f9f6edbec66426f9dc432322748d0df/temp/net-scanner-v5/app/src/main/java/com/netscanner/ui/screens/MonitorScreens.kt:415:50 Unresolved reference 'metricStr'.
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':app:compileDebugKotlin'.
+> A failure occurred while executing org.jetbrains.kotlin.compilerRunner.GradleCompilerRunnerWithWorkers$GradleKotlinCompilerWorkAction
+   > Compilation error. See log for more details
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights.
+> Get more help at https://help.gradle.org.
+
+BUILD FAILED in 10s

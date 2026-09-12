@@ -4,7 +4,10 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.LinkProperties
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
@@ -22,31 +25,63 @@ import java.util.LinkedHashSet
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * v5 DNS Sniffer VPN — establishes a local TUN that ONLY routes the fake DNS
- * server (10.111.222.1:53) into the tunnel, so all system DNS traffic flows
- * through us while normal data traffic stays untouched (no full NAT needed).
- * Plaintext queries are parsed from the UDP/53 payload and recorded for the
- * UI; the query is forwarded to a real upstream resolver through a
- * protected socket, and the response is written back into the TUN.
+ * v5.1.3 DNS Sniffer VPN -- FAITHFUL mechanism port of the proven legacy
+ * v4.7/4.8 SnifferVpnService (transparent interception), replacing the
+ * v5.1.2 fake-DNS-server design:
  *
- * v5.1.2 fixes for the reported "bad DNS config" (pages never load while the
- * VPN is up):
- *  1. buildReply() reused the REQUEST's UDP checksum for the reply — a
- *     guaranteed-invalid checksum, so the kernel dropped every DNS response.
- *     IPv4 UDP checksum is now zeroed (0 = "no checksum", always legal).
- *  2. The app itself is excluded from the VPN (addDisallowedApplication) so
- *     the forwarder can never be looped back into its own TUN.
- *  3. Upstream resolution falls back across 8.8.8.8 / 1.1.1.1 / 223.5.5.5
- *     (a blocked upstream no longer kills every lookup).
- *  4. establish() failure now flips `running` off and logs, instead of
- *     leaving a zombie "active" state.
+ *  Legacy mechanism (what actually worked for years):
+ *   - TUN address 10.111.222.1/32, DNS server 8.8.8.8 (a REAL resolver, so
+ *     the VPN network has a valid DNS config).
+ *   - Routes = the real public DNS IPs (8.8.8.8/32, 1.1.1.1/32) PLUS the
+ *     network's own DHCP/system DNS servers /32. Any plaintext UDP/53
+ *     query the device sends therefore rides the TUN -- nothing else is
+ *     captured, normal data is untouched.
+ *   - read loop: catch UDP packets whose dst port is 53, forward the
+ *     payload through a PROTECTED socket to the packet's ORIGINAL
+ *     destination (preserves captive/ISP/LAN resolver semantics), then
+ *     write the response back into the TUN with:
+ *       src ip = original dst (the real server the app queried)
+ *       src port = 53, dst = original src + its port
+ *       UDP checksum = 0 (legal "no checksum" on IPv4)
+ *       IP checksum recomputed.
+ *   - QNAMEs are parsed and pushed into the log deque for the UI.
+ *
+ *  Kept from v5.1.2 (harmless hardening): the sniffer app itself is
+ *  excluded from the VPN, and if the original destination does not answer
+ *  we fall back to 8.8.8.8 / 1.1.1.1 before giving up.
  */
 class SnifferVpnService : VpnService() {
 
     private var tun: ParcelFileDescriptor? = null
     @Volatile private var stopFlag = false
     private var worker: Thread? = null
-    @Volatile private var upstream: String = UPSTREAMS[0]
+
+    /** Legacy route sources: hardcoded publics + whatever the network uses. */
+    private val routedDns = LinkedHashSet<String>()
+
+    override fun onCreate() {
+        super.onCreate()
+        collectNetworkDns()
+    }
+
+    /** Legacy getDhcpDns(): current network LinkProperties DNS servers. */
+    private fun collectNetworkDns() {
+        try {
+            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            val nets = cm.allNetworks
+            for (net in nets) {
+                val lp: LinkProperties? = cm.getLinkProperties(net)
+                lp?.dnsServers?.forEach { s ->
+                    val h = s.hostAddress
+                    if (h != null && !s.isLoopbackAddress) routedDns.add(h)
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "collectNetworkDns failed: ${e.message}")
+        }
+        routedDns.addAll(DEFAULT_DNS)
+        Log.d(TAG, "routed DNS targets: $routedDns")
+    }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
@@ -54,9 +89,8 @@ class SnifferVpnService : VpnService() {
             stopSelf()
             return START_NOT_STICKY
         }
-        Log.d(TAG, "onStartCommand — establishing TUN (excluded app: $packageName)")
+        Log.d(TAG, "onStartCommand -- establishing transparent TUN")
         startAsForeground()
-        running.set(true)
         startTun()
         return START_STICKY
     }
@@ -73,7 +107,7 @@ class SnifferVpnService : VpnService() {
         val b = if (Build.VERSION.SDK_INT >= 26)
             Notification.Builder(this, CHAN) else Notification.Builder(this)
         b.setContentTitle("DNS Sniffer active")
-            .setContentText("Capturing DNS queries — tap to open")
+            .setContentText("Capturing DNS queries -- tap to open")
             .setSmallIcon(R.drawable.ic_stat_net)
             .setOngoing(true)
             .setContentIntent(pi)
@@ -87,10 +121,17 @@ class SnifferVpnService : VpnService() {
                 .setSession("NetScanner DNS Sniffer")
                 .setMtu(32767)
                 .addAddress("10.111.222.1", 32)
-                .addDnsServer("10.111.222.1")
-                .addRoute("10.111.222.1", 32)   // ONLY the fake DNS rides the TUN
-            // v5.1.2: never route the sniffer's own traffic into its own TUN —
-            // protects the forwarder socket from routing loops.
+                .addDnsServer("8.8.8.8")            // legacy: a REAL resolver so the VPN network's DNS config is valid
+            // Legacy route set: every DNS server the device could ever use,
+            // each as a /32 -- only DNS rides the TUN.
+            collectNetworkDns()
+            routedDns.forEach { ip ->
+                try { b.addRoute(ip, 32) } catch (e: Exception) {
+                    Log.w(TAG, "route $ip failed: ${e.message}")
+                }
+            }
+            // Hardening kept from v5.1.2: never route our own forwarder back
+            // into the TUN.
             try { b.addDisallowedApplication(packageName) } catch (e: Exception) {
                 Log.w(TAG, "addDisallowedApplication failed: ${e.message}")
             }
@@ -100,14 +141,14 @@ class SnifferVpnService : VpnService() {
             tun = null
         }
         if (tun == null) {
-            // v5.1.2: no zombie state — UI must see the VPN as stopped.
+            // v5.1.2 hardening: no zombie state -- UI must see the VPN as stopped.
             running.set(false)
             return
         }
 
         val fd = tun!!.fileDescriptor
         stopFlag = false
-        Log.d(TAG, "TUN established, worker loop starting")
+        Log.d(TAG, "TUN established, legacy loop() starting")
         worker = Thread {
             running.set(true)
             val input = FileInputStream(fd)
@@ -127,9 +168,9 @@ class SnifferVpnService : VpnService() {
         }.apply { isDaemon = true; start() }
     }
 
-    /** Parse one TUN packet: if UDP dst:53 → sniff + forward + respond. */
+    /** Legacy handle(): if UDP dst:53 -> log QNAME, forward to the ORIGINAL dst, reply. */
     private fun handlePacket(buf: ByteArray, n: Int, out: FileOutputStream) {
-        if (n < 28) return                                  // IP(20)+UDP(8)+DNS(12) minimum-ish
+        if (n < 28) return                                  // IP(20)+UDP(8)+DNS header(12)
         if (buf[0].toInt() and 0xF0 != 0x40) return         // IPv4 only
         val ihl = (buf[0].toInt() and 0x0F) * 4
         if (n < ihl + 8) return
@@ -144,19 +185,21 @@ class SnifferVpnService : VpnService() {
         val domain = queryDomain(dns)
         if (domain != null) record(domain)
 
-        // v5.1.2: forward through a protected socket with upstream fallback —
-        // try the sticky upstream first, then the rest of the list.
+        // Legacy forwarding semantics: send to the packet's ORIGINAL
+        // destination first (ISP / LAN / captive resolvers keep working),
+        // then fall back to the public resolvers.
+        val dstIp = ByteArray(4)
+        System.arraycopy(buf, 16, dstIp, 0, 4)
+        val originalDst = dstIp.joinToString(".") { (it.toInt() and 0xFF).toString() }
+
         var resp: ByteArray? = null
-        val order = ArrayList<String>(UPSTREAMS.size)
-        order.add(upstream)
-        UPSTREAMS.forEach { if (it != upstream) order.add(it) }
-        for (u in order) {
-            resp = tryUdpForward(dns, u)
+        val order = ArrayList<String>(UPSTREAMS.size + 1)
+        order.add(originalDst)
+        UPSTREAMS.forEach { if (it != originalDst) order.add(it) }
+        for (up in order) {
+            resp = tryUdpForward(dns, up)
             if (resp != null) {
-                if (u != upstream) {
-                    Log.d(TAG, "upstream switched to $u")
-                    upstream = u
-                }
+                if (up != originalDst) Log.d(TAG, "original dst $originalDst failed, answered by $up")
                 break
             }
         }
@@ -180,15 +223,15 @@ class SnifferVpnService : VpnService() {
             sock.receive(rp)
             rb.copyOf(rp.length)
         }
-    } catch (_: Exception) { null }
+    } catch (_: Exception) {
+        null
+    }
 
     /**
-     * Rebuild IPv4+UDP reply: src=10.111.222.1:53, dst=original inner src.
-     * v5.1.2 CRITICAL FIX: the UDP checksum must NOT be copied from the
-     * request — a checksum over the reply payload is invalid and the kernel
-     * silently drops the datagram, which is exactly the reported
-     * "bad DNS config" symptom. IPv4 treats UDP checksum 0 as "absent",
-     * which is always accepted, so we zero it.
+     * Legacy buildReply semantics: the reply appears to come from the REAL
+     * server the app queried (src = original dst IP, src port 53), addressed
+     * back to the requester (dst = original src IP/port). UDP checksum is 0
+     * (legal "absent" on IPv4), IP checksum recomputed.
      */
     private fun buildReply(req: ByteArray, ihl: Int, udpOff: Int, dns: ByteArray): ByteArray {
         val udpLen = 8 + dns.size
@@ -196,15 +239,16 @@ class SnifferVpnService : VpnService() {
         val o = ByteArray(total)
         System.arraycopy(req, 0, o, 0, ihl + 8)
         o[2] = ((total shr 8) and 0xFF).toByte(); o[3] = (total and 0xFF).toByte()
-        val appIp = req.copyOfRange(12, 16)
-        o[12] = 10.toByte(); o[13] = 111.toByte(); o[14] = 222.toByte(); o[15] = 1.toByte()     // new src = fake DNS
-        System.arraycopy(appIp, 0, o, 16, 4)                // dst = app inner IP
+        // swap directions: src <- original dst, dst <- original src
+        System.arraycopy(req, 16, o, 12, 4)                 // new src = original dst (real server)
+        System.arraycopy(req, 12, o, 16, 4)                 // new dst = original src (requester)
         o[udpOff] = ((udpLen shr 8) and 0xFF).toByte(); o[udpOff + 1] = (udpLen and 0xFF).toByte()
-        o[udpOff + 2] = 0.toByte(); o[udpOff + 3] = 53.toByte()               // src port 53
-        o[udpOff + 4] = ((req[udpOff].toInt() and 0xFF)).toByte()  // keep the requester's src port
-        o[udpOff + 5] = ((req[udpOff + 1].toInt() and 0xFF)).toByte()
-        o[udpOff + 6] = 0.toByte(); o[udpOff + 7] = 0.toByte()  // UDP checksum 0 = valid "none" on IPv4
+        o[udpOff + 2] = 0.toByte(); o[udpOff + 3] = 53.toByte()                 // src port 53
+        o[udpOff + 4] = req[udpOff].toInt().toByte()        // legacy: requester's port is at udpOff now
+        o[udpOff + 5] = req[udpOff + 1].toInt().toByte()
+        o[udpOff + 6] = 0.toByte(); o[udpOff + 7] = 0.toByte()  // UDP checksum 0 = valid "none"
         System.arraycopy(dns, 0, o, ihl + 8, dns.size)
+        // recompute IP header checksum
         var sum = 0L
         o[10] = 0.toByte(); o[11] = 0.toByte()
         var i = 0
@@ -235,7 +279,9 @@ class SnifferVpnService : VpnService() {
                 p += 1 + len
             }
             if (sb.isEmpty()) null else sb.toString()
-        } catch (_: Exception) { null }
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private fun stopTun() {
@@ -252,7 +298,10 @@ class SnifferVpnService : VpnService() {
         super.onDestroy()
     }
 
-    override fun onRevoke() { onDestroy(); super.onRevoke() }
+    override fun onRevoke() {
+        onDestroy()
+        super.onRevoke()
+    }
 
     companion object {
         private const val TAG = "SnifferVpn"
@@ -260,10 +309,12 @@ class SnifferVpnService : VpnService() {
         const val CHAN = "sniffer"
         const val NOTIF_ID = 41
 
-        /** v5.1.2: forwarder tries these in order and sticks with the first that answers. */
+        /** Legacy publics + fallback chain when the original dst is unreachable. */
+        private val DEFAULT_DNS = listOf("8.8.8.8", "1.1.1.1")
         private val UPSTREAMS = listOf("8.8.8.8", "1.1.1.1", "223.5.5.5")
 
-        @JvmStatic val running = AtomicBoolean(false)
+        @JvmStatic
+        val running = AtomicBoolean(false)
 
         private const val KEEP = 300
         private val recent = LinkedHashSet<String>()
