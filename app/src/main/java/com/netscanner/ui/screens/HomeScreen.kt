@@ -208,7 +208,7 @@ fun HomeScreen(nav: Navigator) {
                 Text("⚙", color = p.text, fontSize = 15.sp)
                 Spacer(Modifier.size(6.dp))
                 Text(
-                    "v5.1.1",
+                    "v5.1.2",
                     color = p.accent,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold

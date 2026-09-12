@@ -12,21 +12,21 @@ import android.telephony.PhoneStateListener
 import android.telephony.SignalStrength
 import android.telephony.TelephonyCallback
 import android.telephony.TelephonyManager
+import android.util.Log
 import com.netscanner.MainActivity
 import com.netscanner.R
 
 /**
- * v5 Cell Monitor foreground service — listens to signal strength changes and
+ * v5 Cell Monitor foreground service — samples signal strength at 1 Hz and
  * keeps a full (expanded) status-bar notification showing dBm, ASU, bars,
  * network tech and carrier. Parity of the legacy CellMonitorService.
  *
- * v5.1.1 fix: the legacy PhoneStateListener.listen() path silently stopped
- * delivering onSignalStrengthsChanged on Android 10/11+ (location / phone
- * permission enforcement), which left lastDbm at Integer.MAX_VALUE forever —
- * the direct root cause of the Gauges tab rendering nothing. On API 31+ we
- * now register a TelephonyManager.SignalStrengthChangedCallback (which
- * delivers when READ_PHONE_STATE is held); below 31 we fall back to the
- * legacy listener.
+ * v5.1.2 fix: the service is now the SINGLE writer of [CellStore] — a 1 Hz
+ * sampler thread reads `signalStrength` directly (getSignalStrength needs no
+ * runtime permission, so samples flow even before the user grants phone
+ * access) and appends every reading into the store the UI reads. The legacy
+ * listener / API31+ TelephonyCallback are kept only for instant notification
+ * refreshes. Lifecycle, first-sample and reflection fallbacks are logged.
  */
 class CellService : android.app.Service() {
 
@@ -34,18 +34,89 @@ class CellService : android.app.Service() {
     private var listener: PhoneStateListener? = null
     private var cb: TelephonyCallback? = null
     private var cbTm: TelephonyManager? = null
+    private var sampler: Thread? = null
+
+    /** Selected subscription id for per-SIM sampling; MIN_VALUE = default SIM. */
+    @Volatile private var sampleSubId: Int = Int.MIN_VALUE
+    private var lastNotifDbm = Int.MAX_VALUE
+    private var lastNotifBars = -1
+    private var lastNotifAt = 0L
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
+            Log.d(TAG, "stop requested — shutting down sampler")
             stopSelf()
             return START_NOT_STICKY
         }
+        val sub = intent?.getIntExtra(EXTRA_SUB_ID, Int.MIN_VALUE) ?: Int.MIN_VALUE
+        if (sub != Int.MIN_VALUE) sampleSubId = sub
+        Log.d(TAG, "onStartCommand sub=${if (sampleSubId == Int.MIN_VALUE) "default" else sampleSubId} alreadyRunning=$running")
         startAsForeground()
         running = true
-        listen()
+        listen()        // instant notification refresh only
+        startSampler()  // the real 1 Hz data producer
         return START_STICKY
+    }
+
+    /**
+     * v5.1.2: 1 Hz sampler — the single writer of CellStore. Reads
+     * TelephonyManager.signalStrength directly; getSignalStrength() requires
+     * no runtime permission, so this produces live data even with zero
+     * permissions granted. Per-SIM devices sample the subscription chosen
+     * in the UI via EXTRA_SUB_ID.
+     */
+    private fun startSampler() {
+        if (sampler?.isAlive == true) return
+        sampler = Thread {
+            Log.d(TAG, "1 Hz sampler started (sub=${if (sampleSubId == Int.MIN_VALUE) "default" else sampleSubId})")
+            var firstLogged = false
+            while (running && !Thread.currentThread().isInterrupted) {
+                try {
+                    val m = if (sampleSubId != Int.MIN_VALUE) {
+                        try { tm?.createForSubscriptionId(sampleSubId) } catch (_: Exception) { tm }
+                    } else tm
+                    val ss = try { m?.signalStrength } catch (_: Exception) { null }
+                    val dbm = cellDbm(ss)
+                    if (dbm != Integer.MAX_VALUE) {
+                        val asu = try {
+                            SignalStrength::class.java.getMethod("getAsuLevel").invoke(ss) as Int
+                        } catch (_: Exception) { -1 }
+                        val bars = try { ss?.level ?: 0 } catch (_: Exception) { 0 }
+                        CellStore.appendSample(dbm, asu, bars, "service")
+                        if (!firstLogged) {
+                            Log.d(TAG, "first live sample: dbm=$dbm asu=$asu bars=$bars — signal source confirmed firing")
+                            firstLogged = true
+                        }
+                        throttledNotif()
+                    } else {
+                        CellStore.setNoSource(
+                            "sampler: signalStrength not readable yet (present=${ss != null})"
+                        )
+                    }
+                } catch (e: Exception) {
+                    CellStore.setNoSource("sampler error: ${e.message}")
+                }
+                try {
+                    Thread.sleep(1000)
+                } catch (_: InterruptedException) {
+                    break
+                }
+            }
+            Log.d(TAG, "sampler exited")
+        }.apply { name = "cell-sampler"; isDaemon = true; start() }
+    }
+
+    /** Notification refresh limited to bar changes or a 15 s cadence. */
+    private fun throttledNotif() {
+        val now = System.currentTimeMillis()
+        if (lastDbm != lastNotifDbm || lastBars != lastNotifBars || now - lastNotifAt > 15_000) {
+            lastNotifDbm = lastDbm
+            lastNotifBars = lastBars
+            lastNotifAt = now
+            updateNotif()
+        }
     }
 
     private fun hasPhonePerm(): Boolean =
@@ -89,13 +160,12 @@ class CellService : android.app.Service() {
     }
 
     private fun handleSignalStrength(ss: SignalStrength?) {
-        val dbm = cellDbm(ss)
-        lastDbm = dbm
-        lastAsu = try {
-            SignalStrength::class.java.getMethod("getAsuLevel").invoke(ss) as Int
-        } catch (_: Exception) { -1 }
-        lastBars = barsOf(dbm)
-        if (dbm != Integer.MAX_VALUE) updateNotif()
+        // v5.1.2: the 1 Hz sampler thread in startSampler() is the single
+        // writer of CellStore. This callback path (TelephonyCallback /
+        // PhoneStateListener) is kept ONLY for instant notification refresh —
+        // writing store state from two producers duplicated samples.
+        Log.d(TAG, "listener fired — refreshing notification")
+        throttledNotif()
     }
 
     private fun startAsForeground() {
@@ -142,7 +212,10 @@ class CellService : android.app.Service() {
     }
 
     override fun onDestroy() {
+        Log.d(TAG, "onDestroy — stopping sampler (samples=${CellStore.sampleCount})")
         running = false
+        sampler?.interrupt()
+        sampler = null
         val c = cb
         val m = cbTm
         if (c != null && m != null) {
@@ -156,14 +229,24 @@ class CellService : android.app.Service() {
     }
 
     companion object {
+        private const val TAG = "CellService"
         const val ACTION_STOP = "com.netscanner.CELL_STOP"
+
+        /** EXTRA for per-SIM sampling: subscription id, or omit for default SIM. */
+        const val EXTRA_SUB_ID = "com.netscanner.extra.SUB_ID"
         const val CHAN = "cellmon"
         const val NOTIF_ID = 42
 
         @JvmStatic @Volatile var running: Boolean = false
-        @JvmStatic @Volatile var lastDbm: Int = Integer.MAX_VALUE
-        @JvmStatic @Volatile var lastAsu: Int = -1
-        @JvmStatic @Volatile var lastBars: Int = 0
+
+        // v5.1.2: the three scalars are now read-only views of the unified
+        // CellStore (single 1 Hz writer). Keep the legacy names so existing
+        // call sites keep compiling.
+        @JvmStatic val lastDbm: Int get() = CellStore.lastDbm
+        @JvmStatic val lastAsu: Int get() = CellStore.lastAsu
+        @JvmStatic val lastBars: Int get() = CellStore.lastBars
+
+        @Volatile private var loggedReflFail = false
 
         /** dBm from any radio tech; Integer.MAX_VALUE when unknown. */
         @JvmStatic
@@ -172,7 +255,15 @@ class CellService : android.app.Service() {
             return try {
                 val refl = try {
                     SignalStrength::class.java.getMethod("getDbm").invoke(ss) as Int
-                } catch (_: Exception) { Integer.MAX_VALUE }
+                } catch (e: Exception) {
+                    // v5.1.2: log once — silent reflection failure was one of
+                    // the suspected dead-pipeline causes.
+                    if (!loggedReflFail) {
+                        Log.w(TAG, "getDbm reflection failed (${e.javaClass.simpleName}: ${e.message}); falling back to gsm/cdma decode")
+                        loggedReflFail = true
+                    }
+                    Integer.MAX_VALUE
+                }
                 if (refl != Integer.MAX_VALUE && refl != 0) refl
                 else {
                     val g = ss.gsmSignalStrength

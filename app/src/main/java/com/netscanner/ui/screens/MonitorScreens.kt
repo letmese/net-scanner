@@ -54,6 +54,7 @@ import com.netscanner.core.NetUtils
 import com.netscanner.core.ToolEngine
 import com.netscanner.nav.Navigator
 import com.netscanner.svc.CellService
+import com.netscanner.svc.CellStore
 import com.netscanner.ui.charts.BarsChart
 import com.netscanner.ui.charts.LineChart
 import com.netscanner.ui.charts.SignalBars
@@ -156,79 +157,69 @@ fun CellMonitorScreen(nav: Navigator) {
     var bars by remember { mutableIntStateOf(0) }
     var tech by remember { mutableStateOf("--") }
     var operator by remember { mutableStateOf("--") }
-    val samples = remember { mutableStateListOf<Float>() }
     val neighbors = remember { mutableStateListOf<String>() }
-    val csvRows = remember { mutableStateListOf<String>() }
+    // v5.1.2: Gauges/Graph/Log/CSV all read the unified CellStore; these
+    // read-only mirrors are refreshed every second by the UI loop.
+    var samplesList by remember { mutableStateOf<List<Float>>(emptyList()) }
+    var csvList by remember { mutableStateOf<List<String>>(emptyList()) }
+    var eventsList by remember { mutableStateOf<List<String>>(emptyList()) }
     // v5.1.0: restored legacy 6-tab layout (Cells / Gauges / Graph / Log / Info / Map)
     val tabs = listOf("Cells", "Gauges", "Graph", "Log", "Info", "Map")
     var tab by remember { mutableStateOf("Cells") }
-    val events = remember { mutableStateListOf<String>() }
-    var lastLoggedDbm by remember { mutableStateOf<Int?>(null) }
-    var lastLoggedBars by remember { mutableIntStateOf(-1) }
-    val timeFmt = remember { SimpleDateFormat("HH:mm:ss", Locale.US) }
 
-    // 1 s sampling loop — mirrors the legacy rolling 4-minute plot.
-    // v5.1.1: reads signal DIRECTLY from the per-SIM TelephonyManager every
-    // second (no listener permission traps), falling back to CellService
-    // state when READ_PHONE_STATE is missing. This is what brings the
-    // Gauges tab to life: the old path relied solely on the service
-    // listener, which Android 10/11+ silently mutes without permissions,
-    // so dbm stayed null and the gauge rendered nothing forever.
+    // v5.1.2: auto-start the foreground service the moment the screen opens
+    // (passing the selected subscription) so its 1 Hz sampler feeds CellStore
+    // even before any tab is viewed — no more silent empty states from
+    // "never tapped Start Monitor".
+    LaunchedEffect(selSub) {
+        val svc = Intent(ctx, CellService::class.java)
+        selSub?.let { svc.putExtra(CellService.EXTRA_SUB_ID, it) }
+        if (!CellService.running) {
+            ContextCompat.startForegroundService(ctx, svc)
+        } else {
+            try { ctx.startService(svc) } catch (_: Exception) {}
+        }
+        monitoring = true
+    }
+
+    // 1 Hz UI mirror loop. The CellService sampler thread is the single
+    // writer of CellStore; this loop copies the store into compose state so
+    // Gauges/Graph/Log stay live. If the service died but monitoring is
+    // still on, the screen samples directly and feeds the same store — one
+    // source of truth either way. getSignalStrength() requires NO runtime
+    // permission, so the direct read is unconditional: the v5.1.1 bug was
+    // gating it behind READ_PHONE_STATE, leaving every tab empty for users
+    // who never granted it.
     LaunchedEffect(Unit) {
         while (true) {
-            var d: Int? = null
-            if (phoneGranted) {
+            if (CellService.running) {
+                val d = CellStore.lastDbm
+                if (d != Int.MAX_VALUE) {
+                    dbm = d
+                    asu = CellStore.lastAsu
+                    bars = CellStore.lastBars
+                    samplesList = CellStore.snapshotSamples()
+                    csvList = CellStore.snapshotRows()
+                    eventsList = CellStore.snapshotEvents()
+                }
+            } else if (monitoring) {
                 try {
-                    val ss = currentTm.signalStrength
-                    if (ss != null) {
-                        // getDbm()/getAsuLevel() are not in the public SDK
-                        // stubs — use the reflection helper (same as service).
-                        val v = CellService.cellDbm(ss)
-                        if (v != Int.MAX_VALUE) {
-                            d = v
-                            asu = try {
-                                SignalStrength::class.java.getMethod("getAsuLevel")
-                                    .invoke(ss) as Int
-                            } catch (_: Exception) { -1 }
-                            bars = ss.level
-                        }
+                    val ss = tm.signalStrength
+                    val v = CellService.cellDbm(ss)
+                    if (v != Int.MAX_VALUE) {
+                        val a = try {
+                            SignalStrength::class.java.getMethod("getAsuLevel").invoke(ss) as Int
+                        } catch (_: Exception) { -1 }
+                        val b = try { ss?.level ?: 0 } catch (_: Exception) { 0 }
+                        CellStore.appendSample(v, a, b, "screen")
+                        dbm = v
+                        asu = a
+                        bars = b
+                        samplesList = CellStore.snapshotSamples()
+                        csvList = CellStore.snapshotRows()
+                        eventsList = CellStore.snapshotEvents()
                     }
                 } catch (_: Exception) {}
-            }
-            if (d == null) {
-                val s = CellService.lastDbm
-                if (s != Int.MAX_VALUE) {
-                    d = s
-                    asu = CellService.lastAsu
-                    bars = CellService.lastBars
-                }
-            }
-            val dd = d
-            if (dd != null) {
-                dbm = dd
-                samples.add(dd.toFloat())
-                if (samples.size > 240) samples.removeAt(0)
-                csvRows.add("${System.currentTimeMillis()},$dd,$asu,$bars")
-                if (csvRows.size > 2000) csvRows.removeAt(0)
-                // Log tab: record every >=3 dB shift or bar change (legacy log tab parity)
-                val prev = lastLoggedDbm
-                if (prev == null || abs(dd - prev) >= 3 || bars != lastLoggedBars) {
-                    val dir = when {
-                        prev == null -> "  first"
-                        dd > prev -> "  ▲ +${dd - prev}"
-                        dd < prev -> "  ▼ ${dd - prev}"
-                        else -> ""
-                    }
-                    val tag = when {
-                        bars > lastLoggedBars && lastLoggedBars >= 0 -> "  (bars up)"
-                        bars < lastLoggedBars && lastLoggedBars >= 0 -> "  (bars down)"
-                        else -> ""
-                    }
-                    events.add(0, "${timeFmt.format(Date())}  $dd dBm  ${CellService.barsStr(bars)}$dir$tag")
-                    if (events.size > 150) events.removeAt(events.size - 1)
-                    lastLoggedDbm = dd
-                    lastLoggedBars = bars
-                }
             }
             delay(1000)
         }
@@ -280,7 +271,7 @@ fun CellMonitorScreen(nav: Navigator) {
     GlassScreen("Cell Monitor", nav, actions = {
         GlassButton("Export CSV", {
             val sb = StringBuilder("ts,dbm,asu,bars\n")
-            csvRows.forEach { sb.append(it).append('\n') }
+            csvList.forEach { sb.append(it).append('\n') }
             ToolEngine.exportCsv(ctx, "cell_log.csv", sb.toString())
         })
     }) {
@@ -322,6 +313,23 @@ fun CellMonitorScreen(nav: Navigator) {
             )
         }
         Spacer(Modifier.height(8.dp))
+
+        // v5.1.2: permission banner — missing runtime grants used to empty
+        // neighbor cells / SIM info silently; call it out loudly here.
+        if (!granted || !phoneGranted) {
+            LiquidGlassCard(Modifier.fillMaxWidth()) {
+                Text(
+                    buildString {
+                        append("Missing permissions: ")
+                        if (!granted) append("Location (neighbor cells) ")
+                        if (!phoneGranted) append("Phone (SIM list, tech, per-SIM signal) ")
+                        append("— tap the grant buttons above. Live dBm sampling works without them.")
+                    },
+                    color = p.warn, fontSize = 12.sp, fontWeight = FontWeight.Medium
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+        }
 
         // Tab bar — restored legacy 6-tab layout
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -397,9 +405,11 @@ fun CellMonitorScreen(nav: Navigator) {
                     if (dbm == null) {
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            "No live sample yet — tap Start Monitor, or grant Phone + " +
-                                "Location permissions so dBm can be read.",
-                            color = p.dim, fontSize = 12.sp
+                            "No live sample yet — the 1 Hz sampler needs a second. " +
+                                "If this persists: " + CellStore.lastError.ifBlank {
+                                    "make sure monitoring is on (Start Monitor)."
+                                },
+                            color = p.warn, fontSize = 12.sp
                         )
                     }
                     Spacer(Modifier.height(10.dp))
@@ -414,6 +424,9 @@ fun CellMonitorScreen(nav: Navigator) {
                         KV("Carrier", operator)
                         KV("Tech", tech)
                         KV("Bars", "$bars / 4")
+                        // v5.1.2: which producer wrote the latest sample —
+                        // makes the data pipeline verifiable on device.
+                        KV("Source", CellStore.lastSource)
                     }
                     // v5.1.1: at-a-glance per-SIM signal on dual-SIM devices
                     if (sims.size > 1) {
@@ -439,8 +452,16 @@ fun CellMonitorScreen(nav: Navigator) {
             }
             "Graph" -> {
                 LiquidGlassCard(Modifier.fillMaxWidth()) {
+                    if (samplesList.size < 2) {
+                        Text(
+                            "No data yet — one sample per second fills this within moments. " +
+                                "If it stays empty, check the permission banner above.",
+                            color = p.dim, fontSize = 12.sp
+                        )
+                        Spacer(Modifier.height(6.dp))
+                    }
                     LineChart(
-                        samples.toList(), Modifier.fillMaxWidth(),
+                        samplesList, Modifier.fillMaxWidth(),
                         color = p.accent,
                         label = "Signal (dBm), rolling 4 minutes sampled every second"
                     )
@@ -454,7 +475,7 @@ fun CellMonitorScreen(nav: Navigator) {
             "Log" -> {
                 LiquidGlassCard(Modifier.fillMaxWidth().weight(1f)) {
                     SectionTitle("Signal change log")
-                    if (events.isEmpty()) {
+                    if (eventsList.isEmpty()) {
                         Text(
                             "Waiting for signal changes — every >=3 dB shift or bar change " +
                                 "is recorded here.",
@@ -462,7 +483,7 @@ fun CellMonitorScreen(nav: Navigator) {
                         )
                     } else {
                         LazyColumn {
-                            items(events) { e ->
+                            items(eventsList) { e ->
                                 Text(
                                     e, color = p.text, fontSize = 12.sp,
                                     fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
