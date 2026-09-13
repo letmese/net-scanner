@@ -20,7 +20,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -41,29 +44,76 @@ fun LineChart(
     color: Color = LocalGlassPalette.current.accent,
     fillAlpha: Float = 0.25f,
     fixedMax: Float? = null,
-    label: String? = null
+    label: String? = null,
+    showYAxis: Boolean = false
 ) {
     val p = LocalGlassPalette.current
     val valid = samples.filter { !it.isNaN() }
+    val textMeasurer = rememberTextMeasurer()
     Column(modifier) {
         if (label != null) {
             Text(label, color = p.dim, fontSize = 12.sp)
             Spacer(Modifier.height(4.dp))
         }
         Canvas(Modifier.fillMaxWidth().height(120.dp)) {
-            // grid
+            // v5.3.4: right-side Y-axis tick labels. Label slots are computed
+            // from the graph height, colliding labels are skipped, and the
+            // "ms" unit is rendered once (top tick only) instead of stacking.
+            // The plot area shrinks by the measured label width so ticks never
+            // overlap the series. Opt-in (showYAxis): callers without it keep
+            // the exact previous rendering.
+            val tickStyle = TextStyle(fontSize = 10.sp, fontWeight = FontWeight.Medium)
+            fun tickText(v: Float, withUnit: Boolean): String =
+                String.format(if (v < 10f) "%.1f" else "%.0f", v) + if (withUnit) " ms" else ""
+
+            var chartW = size.width
+            if (showYAxis && valid.size >= 2) {
+                val maxV = fixedMax ?: maxOf(valid.max(), 0.0001f)
+                // Candidate ticks aligned with the three gridlines (75/50/25 %
+                // of max) plus the top edge (100 % of max).
+                val candidates = listOf(maxV, maxV * 0.75f, maxV * 0.5f, maxV * 0.25f)
+                val first = textMeasurer.measure(tickText(candidates[0], true), tickStyle)
+                val half = first.size.height / 2f
+                val slots = listOf(half, size.height * 0.25f, size.height * 0.5f, size.height * 0.75f)
+                val placed = mutableListOf<Pair<String, Float>>()
+                var lastBottom = -Float.MAX_VALUE
+                candidates.forEachIndexed { i, v ->
+                    val text = tickText(v, i == 0)   // single axis unit: top tick only
+                    val m = textMeasurer.measure(text, tickStyle)
+                    val top = slots[i] - m.size.height / 2f
+                    val bottom = slots[i] + m.size.height / 2f
+                    if (top >= lastBottom + 4f) {    // skip any label that would collide
+                        placed.add(text to slots[i])
+                        lastBottom = bottom
+                    }
+                }
+                if (placed.isNotEmpty()) {
+                    val maxW = placed.maxOf { textMeasurer.measure(it.first, tickStyle).size.width }
+                    chartW = (size.width - maxW - 14.dp.toPx()).coerceAtLeast(size.width * 0.5f)
+                    placed.forEach { (text, y) ->
+                        val m = textMeasurer.measure(text, tickStyle)
+                        drawText(
+                            m,
+                            color = p.dim,
+                            topLeft = Offset(size.width - 4.dp.toPx() - m.size.width, y - m.size.height / 2f)
+                        )
+                    }
+                }
+            }
+
+            // grid (clipped to the plot area)
             val grid = p.faint.copy(alpha = 0.35f)
             for (i in 1..3) {
                 val y = size.height * i / 4f
-                drawLine(grid, Offset(0f, y), Offset(size.width, y), 1f)
+                drawLine(grid, Offset(0f, y), Offset(chartW, y), 1f)
             }
             if (valid.size < 2) {
-                drawLine(p.faint, Offset(0f, size.height / 2), Offset(size.width, size.height / 2), 2f)
+                drawLine(p.faint, Offset(0f, size.height / 2), Offset(chartW, size.height / 2), 2f)
                 return@Canvas
             }
             val maxV = fixedMax ?: maxOf(valid.max(), 0.0001f)
             val minV = 0f
-            val stepX = size.width / (valid.size - 1).coerceAtLeast(1)
+            val stepX = chartW / (valid.size - 1).coerceAtLeast(1)
             fun pt(i: Int): Offset =
                 Offset(i * stepX, size.height - ((valid[i] - minV) / maxV) * size.height)
 
@@ -74,7 +124,7 @@ fun LineChart(
             }
             val fill = Path().apply {
                 addPath(path)
-                lineTo(size.width, size.height)
+                lineTo(chartW, size.height)
                 lineTo(0f, size.height)
                 close()
             }

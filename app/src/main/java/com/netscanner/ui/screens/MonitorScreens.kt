@@ -693,7 +693,8 @@ fun PingMonitorScreen(nav: Navigator) {
                 samples.toList(),
                 Modifier.fillMaxWidth(),
                 color = p.accent,
-                label = "Latency (ms), last ${samples.size} pings"
+                label = "Latency (ms), last ${samples.size} pings",
+                showYAxis = true
             )
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
