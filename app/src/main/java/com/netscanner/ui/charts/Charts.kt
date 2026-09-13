@@ -28,6 +28,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.netscanner.ui.theme.LocalGlassPalette
+import java.util.Locale
 
 /**
  * Pure-Canvas chart components (ports of the legacy LatencyView / SpeedView /
@@ -64,7 +65,9 @@ fun LineChart(
             // the exact previous rendering.
             val tickStyle = TextStyle(fontSize = 10.sp, fontWeight = FontWeight.Medium)
             fun tickText(v: Float, withUnit: Boolean): String =
-                String.format(if (v < 10f) "%.1f" else "%.0f", v) + if (withUnit) " ms" else ""
+                String.format(
+                    Locale.US, if (v < 10f) "%.1f" else "%.0f", v
+                ) + if (withUnit) " ms" else ""
 
             var chartW = size.width
             if (showYAxis && valid.size >= 2) {
@@ -82,7 +85,9 @@ fun LineChart(
                     val m = textMeasurer.measure(text, tickStyle)
                     val top = slots[i] - m.size.height / 2f
                     val bottom = slots[i] + m.size.height / 2f
-                    if (top >= lastBottom + 4f) {    // skip any label that would collide
+                    // Adaptive breathing room: proportional to label height so
+                    // ticks can never visually touch/overlap at any font scale.
+                    if (top >= lastBottom + m.size.height * 0.45f) {
                         placed.add(text to slots[i])
                         lastBottom = bottom
                     }
