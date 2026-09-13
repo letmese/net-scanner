@@ -23,7 +23,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -60,6 +60,13 @@ data class HomeTile(
     val emoji: String, val title: String, val sub: String,
     val use: String, val tintIdx: Int, val dest: Route
 )
+
+/**
+ * v5.3.6: hoisted Home scroll state (process-level singleton, same pattern as
+ * ScanState). Previously rememberScrollState() died with the composable, so
+ * back-navigation from any tab snapped Home back to the top.
+ */
+private val homeScroll = ScrollState(0)
 
 private val TINTS = intArrayOf(
     0xFF00D4FF.toInt(), 0xFF00A3FF.toInt(), 0xFF00F5FF.toInt(), 0xFF00FF88.toInt(),
@@ -208,7 +215,7 @@ fun HomeScreen(nav: Navigator) {
                 Text("⚙", color = p.text, fontSize = 15.sp)
                 Spacer(Modifier.size(6.dp))
                 Text(
-                    "v5.1.2",
+                    "v5.3.6",
                     color = p.accent,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold
@@ -228,7 +235,7 @@ fun HomeScreen(nav: Navigator) {
         }
         Spacer(Modifier.height(12.dp))
 
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+        Column(Modifier.fillMaxSize().verticalScroll(homeScroll)) {
             HOME_TILES.chunked(2).forEach { row ->
                 Row(
                     Modifier.fillMaxWidth(),

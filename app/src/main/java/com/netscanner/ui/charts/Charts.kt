@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
@@ -63,7 +64,15 @@ fun LineChart(
             // The plot area shrinks by the measured label width so ticks never
             // overlap the series. Opt-in (showYAxis): callers without it keep
             // the exact previous rendering.
-            val tickStyle = TextStyle(fontSize = 10.sp, fontWeight = FontWeight.Medium)
+            // v5.3.6: monospace font for tick labels — device-locale font
+            // fallback can render proportional/tofu glyphs for Latin digits;
+            // Monospace is guaranteed on every Android build and renders the
+            // digits as clean fixed-width glyphs.
+            val tickStyle = TextStyle(
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Medium,
+                fontFamily = FontFamily.Monospace
+            )
             fun tickText(v: Float, withUnit: Boolean): String =
                 String.format(
                     Locale.US, if (v < 10f) "%.1f" else "%.0f", v

@@ -428,14 +428,56 @@ object ToolEngine {
                 append("Lease:       ${dhcp.leaseDuration / 3600} h")
             }
         }
+        // v5.3.6: Public IP via Cloudflare cdn-cgi/trace (HTTPS, reliable);
+        // ISP / city / region / country / AS via ipwho.is (HTTPS, free, no
+        // key). Both paths response-code checked with timeouts; ipinfo.io
+        // dropped (429 on free tier) and a visible error line is emitted
+        // when both providers fail instead of a silent "?".
+        var ok = false
+        var pub = ""
         try {
-            val pub = httpGetText("https://api.ipify.org")
-            append("Public IP:   $pub")
-            val info = httpGetText("https://ipinfo.io/json")
-            append("ISP/Org:     ${jsonVal(info, "org")}")
-            append("City:        ${jsonVal(info, "city")}, ${jsonVal(info, "region")} ${jsonVal(info, "country")}")
+            val trace = httpGetText("https://www.cloudflare.com/cdn-cgi/trace")
+            val m = Regex("(?m)^ip=(.+)$").find(trace)
+            if (m != null) {
+                pub = m.groupValues[1].trim()
+                append("Public IP:   $pub")
+                ok = true
+            }
         } catch (e: Exception) {
-            append("Public IP lookup failed: ${e.message}")
+        }
+        if (pub.isEmpty()) {
+            try {
+                pub = httpGetText("https://api.ipify.org")
+                if (pub.isNotEmpty()) {
+                    append("Public IP:   $pub")
+                    ok = true
+                }
+            } catch (e: Exception) {
+            }
+        }
+        try {
+            val info = httpGetText("https://ipwho.is/")
+            if (!info.contains("\"success\":false")) {
+                val isp = jsonVal(info, "isp").removePrefix("?")
+                    .ifEmpty { jsonVal(info, "org").removePrefix("?") }
+                val city = jsonVal(info, "city").removePrefix("?")
+                val region = jsonVal(info, "region").removePrefix("?")
+                val country = jsonVal(info, "country").removePrefix("?")
+                val asn = jsonNum(info, "asn")
+                if (isp.isNotEmpty()) {
+                    append("ISP:         $isp")
+                    ok = true
+                }
+                if (city.isNotEmpty()) {
+                    append("Location:    $city, $region $country")
+                    ok = true
+                }
+                if (asn.isNotEmpty()) append("AS:          AS$asn")
+            }
+        } catch (e: Exception) {
+        }
+        if (!ok) {
+            append("Lookup failed: Cloudflare / ipwho.is unreachable (offline or blocked)")
         }
     }
 
@@ -450,10 +492,23 @@ object ToolEngine {
         return json.substring(a, b)
     }
 
+    /** Numeric JSON field (e.g. ipwho.is connection.asn), "" when absent. */
+    private fun jsonNum(json: String, key: String): String {
+        val m = Regex("\"$key\"\\s*:\\s*(\\d+)").find(json) ?: return ""
+        return m.groupValues[1]
+    }
+
     fun httpGetText(url: String): String {
         val c = URL(url).openConnection() as HttpURLConnection
         c.connectTimeout = 4000
         c.readTimeout = 5000
+        // v5.3.6: check the response code — 4xx/5xx bodies arrive on the
+        // error stream and reading inputStream would throw a bare IOException.
+        val code = c.responseCode
+        if (code !in 200..299) {
+            c.disconnect()
+            throw java.io.IOException("HTTP $code")
+        }
         val b = ByteArrayOutputStream()
         val ins = c.inputStream
         val chunk = ByteArray(1024)
